@@ -308,8 +308,7 @@ for group_name in LOCATION_GROUPS.keys():
     st.dataframe(
         styled_df,
         width="stretch",
-        hide_index=True,
-        height=min(600, 45 + len(group_df) * 38)
+        hide_index=True
     )
 
 st.markdown(
