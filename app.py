@@ -125,13 +125,13 @@ def heat_index_band(hi):
 #     return "background-color: #7b1fa2; color: white;"
 
 def row_background_css(hi):
-    if hi is None or hi < 90:
+    if hi is None or hi < YELLOW_MIN:
         return ""
-    if hi < 95:
+    if hi < ORANGE_MIN:
         return "background-color: #fff59d; color: black;"
-    if hi < 100:
+    if hi < RED_MIN:
         return "background-color: #ffcc80; color: black;"
-    if hi < 105:
+    if hi < PURPLE_MIN:
         return "background-color: #d32f2f; color: white;"
     return "background-color: #7b1fa2; color: white;"
     
