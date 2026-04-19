@@ -237,7 +237,7 @@ def render_html_table(styled_df, table_height):
             {html_table}
         </div>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
 
 def build_status_cards(df):
