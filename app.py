@@ -1,5 +1,6 @@
 import math
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -38,12 +39,17 @@ def get_current_conditions(location_key):
     payload = r.json()
     return payload[0] if payload else None
 
+def round1(value):
+    if value is None or pd.isna(value):
+        return None
+    return round(float(value), 1)
+
 def heat_index_f(temp_f, rh):
     if temp_f is None or rh is None:
         return None
 
     if temp_f < 80 or rh < 40:
-        return round(temp_f, 1)
+        return round1(temp_f)
 
     hi = (
         -42.379
@@ -64,7 +70,7 @@ def heat_index_f(temp_f, rh):
         adjustment = ((rh - 85) / 10) * ((87 - temp_f) / 5)
         hi += adjustment
 
-    return round(hi, 1)
+    return round1(hi)
 
 def heat_index_band(hi):
     if hi is None or hi < 90:
@@ -88,12 +94,18 @@ def row_background_css(hi):
         return "background-color: #d32f2f; color: white;"
     return "background-color: #7b1fa2; color: white;"
 
-def parse_obs_time(obs_time):
+def parse_obs_time_ct(obs_time):
     if not obs_time:
         return ""
     try:
         dt = datetime.fromisoformat(obs_time)
-        return dt.strftime("%Y-%m-%d %I:%M:%S %p")
+        dt_ct = dt.astimezone(CENTRAL_TZ)
+        month = dt_ct.month
+        day = dt_ct.day
+        hour12 = dt_ct.strftime("%I").lstrip("0") or "0"
+        minute = dt_ct.strftime("%M")
+        ampm = dt_ct.strftime("%p").lower()
+        return f"{month}/{day} {hour12}:{minute}{ampm}"
     except Exception:
         return obs_time
 
@@ -103,7 +115,7 @@ def obs_age_minutes(obs_time):
     try:
         dt = datetime.fromisoformat(obs_time)
         now_utc = datetime.now(timezone.utc)
-        return round((now_utc - dt.astimezone(timezone.utc)).total_seconds() / 60.0, 1)
+        return round1((now_utc - dt.astimezone(timezone.utc)).total_seconds() / 60.0)
     except Exception:
         return None
 
@@ -116,12 +128,12 @@ def stale_text_css(is_stale, hi):
 
 def extract_row(group_name, site_name, key, c):
     wind = c.get("Wind", {})
-    temp_f = c.get("Temperature", {}).get("Imperial", {}).get("Value")
-    dewpoint_f = c.get("DewPoint", {}).get("Imperial", {}).get("Value")
-    rh = c.get("RelativeHumidity")
-    wind_speed = wind.get("Speed", {}).get("Imperial", {}).get("Value")
-    wind_gust = c.get("WindGust", {}).get("Speed", {}).get("Imperial", {}).get("Value")
-    wind_dir_deg = wind.get("Direction", {}).get("Degrees")
+    temp_f = round1(c.get("Temperature", {}).get("Imperial", {}).get("Value"))
+    dewpoint_f = round1(c.get("DewPoint", {}).get("Imperial", {}).get("Value"))
+    rh = round1(c.get("RelativeHumidity"))
+    wind_speed = round1(wind.get("Speed", {}).get("Imperial", {}).get("Value"))
+    wind_gust = round1(c.get("WindGust", {}).get("Speed", {}).get("Imperial", {}).get("Value"))
+    wind_dir_deg = round1(wind.get("Direction", {}).get("Degrees"))
     wind_dir = wind.get("Direction", {}).get("Localized")
     obs_time_raw = c.get("LocalObservationDateTime")
     age_min = obs_age_minutes(obs_time_raw)
@@ -130,8 +142,7 @@ def extract_row(group_name, site_name, key, c):
     return {
         "Group": group_name,
         "Site": site_name,
-        "Location Key": key,
-        "Observation Time": parse_obs_time(obs_time_raw),
+        "Observation Time (CT)": parse_obs_time_ct(obs_time_raw),
         "Observation Age (min)": age_min,
         "Temp (F)": temp_f,
         "Dew Point (F)": dewpoint_f,
@@ -175,13 +186,8 @@ def style_table(df):
         styles = []
         for col in row.index:
             cell_style = bg
-
-            if col in ["Observation Time", "Observation Age (min)"] and stale_css:
-                if cell_style:
-                    cell_style = f"{cell_style} {stale_css}"
-                else:
-                    cell_style = stale_css
-
+            if col in ["Observation Time (CT)", "Observation Age (min)"] and stale_css:
+                cell_style = f"{cell_style} {stale_css}".strip()
             styles.append(cell_style)
 
         return styles
@@ -231,7 +237,7 @@ df = pd.DataFrame(rows)
 
 display_columns = [
     "Site",
-    "Observation Time",
+    "Observation Time (CT)",
     "Observation Age (min)",
     "Temp (F)",
     "Dew Point (F)",
@@ -242,7 +248,6 @@ display_columns = [
     "Wind Dir",
     "Heat Index (F)",
     "Heat Index Band",
-    "Location Key",
 ]
 
 build_status_cards(df)
@@ -280,7 +285,16 @@ for group_name in LOCATION_GROUPS.keys():
 
     group_df = group_df.sort_values(sort_options[selected_sort], ascending=ascending).reset_index(drop=True)
 
-    styled_df = style_table(group_df[display_columns])
+    styled_df = style_table(group_df[display_columns]).format({
+        "Observation Age (min)": "{:.1f}",
+        "Temp (F)": "{:.1f}",
+        "Dew Point (F)": "{:.1f}",
+        "RH (%)": "{:.1f}",
+        "Wind Speed (mph)": "{:.1f}",
+        "Wind Gust (mph)": "{:.1f}",
+        "Wind Dir (deg)": "{:.1f}",
+        "Heat Index (F)": "{:.1f}",
+    }, na_rep="")
 
     st.dataframe(
         styled_df,
@@ -300,10 +314,13 @@ st.markdown(
     **Stale Observation Rule**
     - If observation age is greater than 30 minutes, the observation time and age text turn red
     - On red/purple heat index rows, stale text turns yellow instead
+
+    **Time Zone Note**
+    - Observation times are displayed in Central Time
     """
 )
 
-st.caption(f"Last page render: {datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')}")
+st.caption(f"Last page render: {datetime.now(CENTRAL_TZ).strftime('%-m/%-d %-I:%M%p').lower()} CT")
 
 st.markdown(
     f"""
