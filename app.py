@@ -24,6 +24,11 @@ LOCATION_GROUPS = {
         "Disney Springs": "196663_POI",
         "Bay Lake": "2257549",
         "Lake Buena Vista": "2257551",
+    },
+    "Disneyland Resort - California": {
+        "Circle D Ranch": "2154424",
+        "DLR Paradise Pier": "327150",
+        "DLR Main Street": "327150",
     }
 }
 
