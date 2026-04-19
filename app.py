@@ -32,8 +32,6 @@ LOCATION_GROUPS = {
     },
     "Aulani Resort - Hawaii": {
         "Aulani Resort and Spa": "2274485",
-        "Ko Olina": "2274485",
-        "Kapolei": "343019",
     }
 }
 def get_current_conditions(location_key):
