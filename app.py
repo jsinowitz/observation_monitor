@@ -29,9 +29,13 @@ LOCATION_GROUPS = {
         "Circle D Ranch": "2154424",
         "DLR Paradise Pier": "327150",
         "DLR Main Street": "327150",
+    },
+    "Aulani Resort - Hawaii": {
+        "Aulani Resort and Spa": "2274485",
+        "Ko Olina": "2274485",
+        "Kapolei": "343019",
     }
 }
-
 def get_current_conditions(location_key):
     url = f"{BASE_URL}/currentconditions/v1/{location_key}"
     params = {
