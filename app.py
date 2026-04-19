@@ -1,9 +1,10 @@
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 import streamlit as st
+from supabase import create_client
 #test comment
 TEST_COLOR_MODE = True
 
@@ -19,7 +20,9 @@ else:
     PURPLE_MIN = 105
     
 st.set_page_config(page_title="Disney Heat Index Dashboard", layout="wide")
-
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
+supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 BASE_URL = "http://apidev.accuweather.com"
 API_KEY = st.secrets["ACCUWEATHER_API_KEY"]
 CENTRAL_TZ = ZoneInfo("America/Chicago")
@@ -48,18 +51,6 @@ LOCATION_GROUPS = {
     }
 }
 
-FIELD_MAP = {
-    "Temp (F)": ("Temperature", "Imperial", "Value"),
-    "Dew Point (F)": ("DewPoint", "Imperial", "Value"),
-    "RH (%)": ("RelativeHumidity",),
-    "Wind Speed (mph)": ("Wind", "Speed", "Imperial", "Value"),
-    "Wind Gust (mph)": ("WindGust", "Speed", "Imperial", "Value"),
-    "Wind Dir (deg)": ("Wind", "Direction", "Degrees"),
-    "Wind Dir": ("Wind", "Direction", "Localized"),
-    "Heat Index (F)": None,
-    "Observation Time (CT)": ("LocalObservationDateTime",),
-}
-
 def safe_get(d, *keys):
     cur = d
     for k in keys:
@@ -67,26 +58,6 @@ def safe_get(d, *keys):
             return None
         cur = cur.get(k)
     return cur
-
-@st.cache_data(ttl=120, show_spinner=False)
-def get_historical_conditions_24(location_key):
-    url = f"{BASE_URL}/currentconditions/v1/{location_key}/historical/24"
-    params = {
-        "apikey": API_KEY,
-        "details": "true"
-    }
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()
-    payload = r.json()
-    return payload if isinstance(payload, list) else []
-
-def parse_obs_dt(obs_time):
-    if not obs_time:
-        return None
-    try:
-        return datetime.fromisoformat(obs_time)
-    except Exception:
-        return None
 
 def format_obs_time_ct_short(obs_time):
     if not obs_time:
@@ -102,71 +73,77 @@ def format_obs_time_ct_short(obs_time):
     except Exception:
         return obs_time
 
-def history_last_hour(location_key):
-    records = get_historical_conditions_24(location_key)
-    parsed = []
-    for rec in records:
-        obs_time = rec.get("LocalObservationDateTime")
-        dt = parse_obs_dt(obs_time)
-        if dt is not None:
-            parsed.append((dt, rec))
-
-    if not parsed:
-        return []
-
-    parsed.sort(key=lambda x: x[0])
-    latest_dt = parsed[-1][0]
-    cutoff = latest_dt.timestamp() - 3600
-
-    return [rec for dt, rec in parsed if dt.timestamp() >= cutoff]
-
 def history_all_variables_df(site_name, location_key):
-    records = history_last_hour(location_key)
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
 
-    rows = []
-    for rec in records:
-        temp_f = round1(safe_get(rec, "Temperature", "Imperial", "Value"))
-        rh = round1(rec.get("RelativeHumidity"))
-        rows.append({
-            "Site": site_name,
-            "Observation Time (CT)": format_obs_time_ct_short(rec.get("LocalObservationDateTime")),
-            "Temp (F)": temp_f,
-            "Dew Point (F)": round1(safe_get(rec, "DewPoint", "Imperial", "Value")),
-            "RH (%)": rh,
-            "Wind Speed (mph)": round1(safe_get(rec, "Wind", "Speed", "Imperial", "Value")),
-            "Wind Gust (mph)": round1(safe_get(rec, "WindGust", "Speed", "Imperial", "Value")),
-            "Wind Dir (deg)": round1(safe_get(rec, "Wind", "Direction", "Degrees")),
-            "Wind Dir": safe_get(rec, "Wind", "Direction", "Localized"),
-            "Heat Index (F)": heat_index_f(temp_f, rh),
-        })
+    result = (
+        supabase.table("observations")
+        .select(
+            "site_name, obs_time_ct, temp_f, dewpoint_f, rh, "
+            "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f"
+        )
+        .eq("location_key", location_key)
+        .eq("keep_sample", True)
+        .gte("obs_time_utc", cutoff)
+        .order("obs_time_utc")
+        .execute()
+    )
 
-    return pd.DataFrame(rows)
+    rows = result.data or []
+
+    return pd.DataFrame([
+        {
+            "Site": r["site_name"],
+            "Observation Time (CT)": r["obs_time_ct"],
+            "Temp (F)": r["temp_f"],
+            "Dew Point (F)": r["dewpoint_f"],
+            "RH (%)": r["rh"],
+            "Wind Speed (mph)": r["wind_speed_mph"],
+            "Wind Gust (mph)": r["wind_gust_mph"],
+            "Wind Dir": r["wind_dir"],
+            "Heat Index (F)": r["heat_index_f"],
+        }
+        for r in rows
+    ])
 
 def history_single_variable_df(site_name, location_key, column_name):
-    records = history_last_hour(location_key)
-    rows = []
+    column_map = {
+        "Temp (F)": "temp_f",
+        "Dew Point (F)": "dewpoint_f",
+        "RH (%)": "rh",
+        "Wind Speed (mph)": "wind_speed_mph",
+        "Wind Gust (mph)": "wind_gust_mph",
+        "Wind Dir (deg)": "wind_dir_deg",
+        "Wind Dir": "wind_dir",
+        "Heat Index (F)": "heat_index_f",
+    }
 
-    for rec in records:
-        temp_f = round1(safe_get(rec, "Temperature", "Imperial", "Value"))
-        rh = round1(rec.get("RelativeHumidity"))
+    if column_name not in column_map:
+        return pd.DataFrame()
 
-        if column_name == "Heat Index (F)":
-            value = heat_index_f(temp_f, rh)
-        elif column_name == "Observation Time (CT)":
-            value = format_obs_time_ct_short(rec.get("LocalObservationDateTime"))
-        else:
-            field_path = FIELD_MAP.get(column_name)
-            value = round1(safe_get(rec, *field_path)) if field_path and column_name != "Wind Dir" else (
-                safe_get(rec, *field_path) if field_path else None
-            )
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    db_col = column_map[column_name]
 
-        rows.append({
-            "Site": site_name,
-            "Observation Time (CT)": format_obs_time_ct_short(rec.get("LocalObservationDateTime")),
-            column_name: value,
-        })
+    result = (
+        supabase.table("observations")
+        .select(f"site_name, obs_time_ct, {db_col}")
+        .eq("location_key", location_key)
+        .eq("keep_sample", True)
+        .gte("obs_time_utc", cutoff)
+        .order("obs_time_utc")
+        .execute()
+    )
 
-    return pd.DataFrame(rows)
+    rows = result.data or []
+
+    return pd.DataFrame([
+        {
+            "Site": r["site_name"],
+            "Observation Time (CT)": r["obs_time_ct"],
+            column_name: r[db_col],
+        }
+        for r in rows
+    ])
 
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
@@ -175,39 +152,11 @@ def render_history_panel(selection, group_df):
     selected_rows = selection["selection"].get("rows", [])
     selected_cells = selection["selection"].get("cells", [])
 
-    if not selected_rows and not selected_cells:
-        return
-
     table_df = group_df.reset_index(drop=True)
 
-    if selected_cells:
-        cell = selected_cells[0]
-        row_idx, col_name = cell
-
-        if row_idx >= len(table_df):
-            return
-
-        site_name = table_df.loc[row_idx, "Site"]
-        location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
-
-        if col_name not in display_columns:
-            return
-
-        with st.expander(f"Last hour for {site_name} — {col_name}", expanded=True):
-            hist_df = history_single_variable_df(site_name, location_key, col_name)
-            if hist_df.empty:
-                st.info("No historical data returned for the past hour.")
-            else:
-                st.dataframe(
-                    hist_df,
-                    width="content",
-                    hide_index=True
-                )
-        return
-
+    # If a row is explicitly selected, show all variables
     if selected_rows:
         row_idx = selected_rows[0]
-
         if row_idx >= len(table_df):
             return
 
@@ -219,11 +168,37 @@ def render_history_panel(selection, group_df):
             if hist_df.empty:
                 st.info("No historical data returned for the past hour.")
             else:
-                st.dataframe(
-                    hist_df,
-                    width="content",
-                    hide_index=True
-                )
+                st.dataframe(hist_df, width="content", hide_index=True)
+        return
+
+    # If a cell is selected, show either all vars (for Site) or one variable
+    if selected_cells:
+        row_idx, col_name = selected_cells[0]
+
+        if row_idx >= len(table_df):
+            return
+
+        site_name = table_df.loc[row_idx, "Site"]
+        location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
+
+        if col_name == "Site":
+            with st.expander(f"Last hour for {site_name}", expanded=True):
+                hist_df = history_all_variables_df(site_name, location_key)
+                if hist_df.empty:
+                    st.info("No historical data returned for the past hour.")
+                else:
+                    st.dataframe(hist_df, width="content", hide_index=True)
+            return
+
+        if col_name not in display_columns:
+            return
+
+        with st.expander(f"Last hour for {site_name} — {col_name}", expanded=True):
+            hist_df = history_single_variable_df(site_name, location_key, col_name)
+            if hist_df.empty:
+                st.info("No historical data returned for the past hour.")
+            else:
+                st.dataframe(hist_df, width="content", hide_index=True)
                 
 def get_current_conditions(location_key):
     url = f"{BASE_URL}/currentconditions/v1/{location_key}"
@@ -337,21 +312,20 @@ def obs_age_minutes(obs_time):
         return int(round((now_utc - dt.astimezone(timezone.utc)).total_seconds() / 60.0))
     except Exception:
         return None
-
+        
 # def stale_text_css(is_stale, hi):
 #     if not is_stale:
 #         return ""
-#     if hi is not None and hi >= RED_MIN:
+#     if hi is not None and hi >= 100:
 #         return "color: yellow; font-weight: 700;"
 #     return "color: red; font-weight: 700;"
-
 def stale_text_css(is_stale, hi):
     if not is_stale:
         return ""
-    if hi is not None and hi >= 100:
+    if hi is not None and hi >= RED_MIN:
         return "color: yellow; font-weight: 700;"
     return "color: red; font-weight: 700;"
-
+    
 def extract_row(group_name, site_name, key, c):
     wind = c.get("Wind", {})
     temp_f = round1(c.get("Temperature", {}).get("Imperial", {}).get("Value"))
