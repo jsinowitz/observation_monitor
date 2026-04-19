@@ -173,7 +173,6 @@ def render_history_panel(selection, group_df):
         return
 
     selected_rows = selection["selection"].get("rows", [])
-    selected_columns = selection["selection"].get("columns", [])
     selected_cells = selection["selection"].get("cells", [])
 
     if not selected_rows and not selected_cells:
@@ -183,8 +182,7 @@ def render_history_panel(selection, group_df):
 
     if selected_cells:
         cell = selected_cells[0]
-        row_idx = cell["row"]
-        col_name = cell["column"]
+        row_idx, col_name = cell
 
         if row_idx >= len(table_df):
             return
@@ -226,7 +224,7 @@ def render_history_panel(selection, group_df):
                     width="content",
                     hide_index=True
                 )
-
+                
 def get_current_conditions(location_key):
     url = f"{BASE_URL}/currentconditions/v1/{location_key}"
     params = {
@@ -377,7 +375,6 @@ def extract_row(group_name, site_name, key, c):
         "RH (%)": rh,
         "Wind Speed (mph)": wind_speed,
         "Wind Gust (mph)": wind_gust,
-        # "Wind Dir (deg)": wind_dir_deg,
         "Wind Dir": wind_dir,
         "Heat Index (F)": hi,
         "Heat Index Band": heat_index_band(hi),
@@ -473,7 +470,6 @@ display_columns = [
     "RH (%)",
     "Wind Speed (mph)",
     "Wind Gust (mph)",
-    # "Wind Dir (deg)",
     "Wind Dir",
     "Heat Index (F)",
     "Heat Index Band",
@@ -487,17 +483,6 @@ for group_name in LOCATION_GROUPS.keys():
     group_df = df[df["Group"] == group_name].copy()
     group_df = group_df.reset_index(drop=True)
     group_df = group_df.dropna(subset=["Site"])
-
-    styled_df = style_table(group_df[display_columns]).format({
-        "Observation Age (min)": "{:.0f}",
-        "Temp (F)": "{:.1f}",
-        "Dew Point (F)": "{:.1f}",
-        "RH (%)": "{:.1f}",
-        "Wind Speed (mph)": "{:.1f}",
-        "Wind Gust (mph)": "{:.1f}",
-        "Wind Dir (deg)": "{:.1f}",
-        "Heat Index (F)": "{:.1f}",
-    }, na_rep="")
     
     table_df = group_df[display_columns].copy()
 
@@ -508,7 +493,7 @@ for group_name in LOCATION_GROUPS.keys():
         "RH (%)": "{:.1f}",
         "Wind Speed (mph)": "{:.1f}",
         "Wind Gust (mph)": "{:.1f}",
-        "Wind Dir (deg)": "{:.1f}",
+        # "Wind Dir (deg)": "{:.1f}",
         "Heat Index (F)": "{:.1f}",
     }, na_rep="")
 
