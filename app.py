@@ -1,10 +1,10 @@
 import math
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Disney Heat Index Dashboard", layout="wide")
 
@@ -197,9 +197,17 @@ def style_table(df):
 def render_html_table(styled_df, table_height):
     html_table = styled_df.to_html(index=False)
 
-    st.markdown(
-        f"""
+    html = f"""
+    <html>
+    <head>
         <style>
+            body {{
+                margin: 0;
+                padding: 0;
+                font-family: sans-serif;
+                background: white;
+            }}
+
             .dashboard-table-wrap {{
                 max-height: {table_height}px;
                 overflow-y: auto;
@@ -209,36 +217,39 @@ def render_html_table(styled_df, table_height):
                 background: white;
             }}
 
-            .dashboard-table-wrap table {{
+            table {{
                 border-collapse: collapse;
                 width: 100%;
                 font-size: 14px;
             }}
 
-            .dashboard-table-wrap thead th {{
+            thead th {{
                 position: sticky;
                 top: 0;
                 background-color: white;
-                z-index: 2;
+                z-index: 10;
                 border-bottom: 2px solid #ccc;
                 text-align: left;
                 padding: 8px;
                 white-space: nowrap;
             }}
 
-            .dashboard-table-wrap tbody td {{
+            tbody td {{
                 padding: 8px;
                 border-bottom: 1px solid #eee;
                 white-space: nowrap;
             }}
         </style>
-
+    </head>
+    <body>
         <div class="dashboard-table-wrap">
             {html_table}
         </div>
-        """,
-        unsafe_allow_html=True
-    )
+    </body>
+    </html>
+    """
+
+    components.html(html, height=table_height + 20, scrolling=False)
 
 def build_status_cards(df):
     total_sites = len(df)
