@@ -1,0 +1,16 @@
+[theme]
+base = "dark"
+
+[theme.dark]
+textColor = "#F5F7FA"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#1A1F2B"
+dataframeHeaderBackgroundColor = "#2A3140"
+dataframeBorderColor = "#465066"
+
+[theme.light]
+textColor = "#111827"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F6F8FB"
+dataframeHeaderBackgroundColor = "#DCE3EC"
+dataframeBorderColor = "#B7C0CC"
