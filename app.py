@@ -5,6 +5,19 @@ import pandas as pd
 import requests
 import streamlit as st
 
+TEST_COLOR_MODE = True
+
+if TEST_COLOR_MODE:
+    YELLOW_MIN = 72
+    ORANGE_MIN = 73
+    RED_MIN = 74
+    PURPLE_MIN = 75
+else:
+    YELLOW_MIN = 90
+    ORANGE_MIN = 95
+    RED_MIN = 100
+    PURPLE_MIN = 105
+    
 st.set_page_config(page_title="Disney Heat Index Dashboard", layout="wide")
 
 BASE_URL = "http://apidev.accuweather.com"
@@ -78,25 +91,47 @@ def heat_index_f(temp_f, rh):
 
     return round1(hi)
 
+# def heat_index_band(hi):
+#     if hi is None or hi < 90:
+#         return "None"
+#     if hi < 95:
+#         return "Yellow"
+#     if hi < 100:
+#         return "Orange"
+#     if hi < 105:
+#         return "Red"
+#     return "Purple"
+
 def heat_index_band(hi):
-    if hi is None or hi < 90:
+    if hi is None or hi < YELLOW_MIN:
         return "None"
-    if hi < 95:
+    if hi < ORANGE_MIN:
         return "Yellow"
-    if hi < 100:
+    if hi < RED_MIN:
         return "Orange"
-    if hi < 105:
+    if hi < PURPLE_MIN:
         return "Red"
     return "Purple"
 
+# def row_background_css(hi):
+#     if hi is None or hi < 90:
+#         return ""
+#     if hi < 95:
+#         return "background-color: #fff59d;"
+#     if hi < 100:
+#         return "background-color: #ffcc80;"
+#     if hi < 105:
+#         return "background-color: #d32f2f; color: white;"
+#     return "background-color: #7b1fa2; color: white;"
+
 def row_background_css(hi):
-    if hi is None or hi < 90:
+    if hi is None or hi < YELLOW_MIN:
         return ""
-    if hi < 95:
+    if hi < ORANGE_MIN:
         return "background-color: #fff59d;"
-    if hi < 100:
+    if hi < RED_MIN:
         return "background-color: #ffcc80;"
-    if hi < 105:
+    if hi < PURPLE_MIN:
         return "background-color: #d32f2f; color: white;"
     return "background-color: #7b1fa2; color: white;"
 
