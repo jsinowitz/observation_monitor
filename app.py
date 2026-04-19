@@ -114,27 +114,27 @@ def heat_index_band(hi):
     return "Purple"
 
 # def row_background_css(hi):
-#     if hi is None or hi < 90:
+#     if hi is None or hi < YELLOW_MIN:
 #         return ""
-#     if hi < 95:
-#         return "background-color: #fff59d;"
-#     if hi < 100:
-#         return "background-color: #ffcc80;"
-#     if hi < 105:
+#     if hi < ORANGE_MIN:
+#         return "background-color: #fff59d; color: black;"
+#     if hi < RED_MIN:
+#         return "background-color: #ffcc80; color: black;"
+#     if hi < PURPLE_MIN:
 #         return "background-color: #d32f2f; color: white;"
 #     return "background-color: #7b1fa2; color: white;"
 
 def row_background_css(hi):
-    if hi is None or hi < YELLOW_MIN:
+    if hi is None or hi < 90:
         return ""
-    if hi < ORANGE_MIN:
-        return "background-color: #fff59d;"
-    if hi < RED_MIN:
-        return "background-color: #ffcc80;"
-    if hi < PURPLE_MIN:
+    if hi < 95:
+        return "background-color: #fff59d; color: black;"
+    if hi < 100:
+        return "background-color: #ffcc80; color: black;"
+    if hi < 105:
         return "background-color: #d32f2f; color: white;"
     return "background-color: #7b1fa2; color: white;"
-
+    
 def parse_obs_time_ct(obs_time):
     if not obs_time:
         return ""
@@ -159,6 +159,13 @@ def obs_age_minutes(obs_time):
         return int(round((now_utc - dt.astimezone(timezone.utc)).total_seconds() / 60.0))
     except Exception:
         return None
+
+# def stale_text_css(is_stale, hi):
+#     if not is_stale:
+#         return ""
+#     if hi is not None and hi >= RED_MIN:
+#         return "color: yellow; font-weight: 700;"
+#     return "color: red; font-weight: 700;"
 
 def stale_text_css(is_stale, hi):
     if not is_stale:
@@ -339,10 +346,10 @@ for group_name in LOCATION_GROUPS.keys():
         "Wind Dir (deg)": "{:.1f}",
         "Heat Index (F)": "{:.1f}",
     }, na_rep="")
-
+    
     st.dataframe(
         styled_df,
-        width="stretch",
+        width="content",
         hide_index=True
     )
 
