@@ -6,7 +6,7 @@ import requests
 import streamlit as st
 from supabase import create_client
 #test comment
-TEST_COLOR_MODE = True
+TEST_COLOR_MODE = False
 
 if TEST_COLOR_MODE:
     YELLOW_MIN = 72
@@ -73,50 +73,14 @@ def format_obs_time_ct_short(obs_time):
     except Exception:
         return obs_time
 
-# def history_all_variables_df(site_name, location_key):
-#     cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-
-#     result = (
-#         supabase.table("observations")
-#         .select(
-#             "site_name, obs_time_ct, temp_f, dewpoint_f, rh, "
-#             "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f"
-#         )
-#         .eq("location_key", location_key)
-#         .eq("keep_sample", True)
-#         .gte("obs_time_utc", cutoff)
-#         .order("obs_time_utc")
-#         .execute()
-#     )
-
-#     rows = result.data or []
-
-#     return pd.DataFrame([
-#         {
-#             "Site": r["site_name"],
-#             "Observation Time (CT)": r["obs_time_ct"],
-#             "Temp (F)": r["temp_f"],
-#             "Dew Point (F)": r["dewpoint_f"],
-#             "RH (%)": r["rh"],
-#             "Wind Speed (mph)": r["wind_speed_mph"],
-#             "Wind Gust (mph)": r["wind_gust_mph"],
-#             "Wind Dir": r["wind_dir"],
-#             "Heat Index (F)": r["heat_index_f"],
-#         }
-#         for r in rows
-#     ])
 def history_all_variables_df(site_name, location_key):
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-
-    st.write("DEBUG site:", site_name)
-    st.write("DEBUG key:", location_key)
-    st.write("DEBUG cutoff:", cutoff)
 
     result = (
         supabase.table("observations")
         .select(
-            "site_name, obs_time_ct, obs_time_utc, temp_f, dewpoint_f, rh, "
-            "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f, location_key"
+            "site_name, obs_time_ct, temp_f, dewpoint_f, rh, "
+            "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f"
         )
         .eq("location_key", location_key)
         .eq("keep_sample", True)
@@ -126,8 +90,6 @@ def history_all_variables_df(site_name, location_key):
     )
 
     rows = result.data or []
-    st.write("DEBUG rows returned:", len(rows))
-    st.write("DEBUG sample rows:", rows[:3])
 
     return pd.DataFrame([
         {
@@ -143,6 +105,7 @@ def history_all_variables_df(site_name, location_key):
         }
         for r in rows
     ])
+
 def history_single_variable_df(site_name, location_key, column_name):
     column_map = {
         "Temp (F)": "temp_f",
@@ -281,38 +244,16 @@ def heat_index_f(temp_f, rh):
 
     return round1(hi)
 
-# def heat_index_band(hi):
-#     if hi is None or hi < 90:
-#         return "None"
-#     if hi < 95:
-#         return "Yellow"
-#     if hi < 100:
-#         return "Orange"
-#     if hi < 105:
-#         return "Red"
-#     return "Purple"
-
 def heat_index_band(hi):
-    if hi is None or hi < YELLOW_MIN:
+    if hi is None or hi < 90:
         return "None"
-    if hi < ORANGE_MIN:
+    if hi < 95:
         return "Yellow"
-    if hi < RED_MIN:
+    if hi < 100:
         return "Orange"
-    if hi < PURPLE_MIN:
+    if hi < 105:
         return "Red"
     return "Purple"
-
-# def row_background_css(hi):
-#     if hi is None or hi < YELLOW_MIN:
-#         return ""
-#     if hi < ORANGE_MIN:
-#         return "background-color: #fff59d; color: black;"
-#     if hi < RED_MIN:
-#         return "background-color: #ffcc80; color: black;"
-#     if hi < PURPLE_MIN:
-#         return "background-color: #d32f2f; color: white;"
-#     return "background-color: #7b1fa2; color: white;"
 
 def row_background_css(hi):
     if hi is None or hi < YELLOW_MIN:
@@ -350,16 +291,10 @@ def obs_age_minutes(obs_time):
     except Exception:
         return None
         
-# def stale_text_css(is_stale, hi):
-#     if not is_stale:
-#         return ""
-#     if hi is not None and hi >= 100:
-#         return "color: yellow; font-weight: 700;"
-#     return "color: red; font-weight: 700;"
 def stale_text_css(is_stale, hi):
     if not is_stale:
         return ""
-    if hi is not None and hi >= RED_MIN:
+    if hi is not None and hi >= 100:
         return "color: yellow; font-weight: 700;"
     return "color: red; font-weight: 700;"
     
