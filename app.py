@@ -264,6 +264,8 @@ for group_name in LOCATION_GROUPS.keys():
 
     group_df = df[df["Group"] == group_name].copy()
 
+    group_df = group_df.dropna(subset=["Site"])
+
     sort_options = {
         "Site": ["Site", "Heat Index (F)"],
         "Heat Index (high to low)": ["Heat Index (F)", "Site"],
