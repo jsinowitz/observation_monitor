@@ -293,7 +293,7 @@ display_columns = [
     "RH (%)",
     "Wind Speed (mph)",
     "Wind Gust (mph)",
-    "Wind Dir (deg)",
+    # "Wind Dir (deg)",
     "Wind Dir",
     "Heat Index (F)",
     "Heat Index Band",
