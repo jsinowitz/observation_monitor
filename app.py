@@ -115,7 +115,7 @@ def obs_age_minutes(obs_time):
     try:
         dt = datetime.fromisoformat(obs_time)
         now_utc = datetime.now(timezone.utc)
-        return round1((now_utc - dt.astimezone(timezone.utc)).total_seconds() / 60.0)
+        return int(round((now_utc - dt.astimezone(timezone.utc)).total_seconds() / 60.0))
     except Exception:
         return None
 
@@ -193,6 +193,52 @@ def style_table(df):
         return styles
 
     return df.style.apply(apply_row_style, axis=1)
+
+def render_html_table(styled_df, table_height):
+    html_table = styled_df.to_html(index=False)
+
+    st.markdown(
+        f"""
+        <style>
+            .dashboard-table-wrap {{
+                max-height: {table_height}px;
+                overflow-y: auto;
+                overflow-x: auto;
+                border: 1px solid #ddd;
+                border-radius: 0.5rem;
+                background: white;
+            }}
+
+            .dashboard-table-wrap table {{
+                border-collapse: collapse;
+                width: 100%;
+                font-size: 14px;
+            }}
+
+            .dashboard-table-wrap thead th {{
+                position: sticky;
+                top: 0;
+                background-color: white;
+                z-index: 2;
+                border-bottom: 2px solid #ccc;
+                text-align: left;
+                padding: 8px;
+                white-space: nowrap;
+            }}
+
+            .dashboard-table-wrap tbody td {{
+                padding: 8px;
+                border-bottom: 1px solid #eee;
+                white-space: nowrap;
+            }}
+        </style>
+
+        <div class="dashboard-table-wrap">
+            {html_table}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def build_status_cards(df):
     total_sites = len(df)
@@ -286,7 +332,7 @@ for group_name in LOCATION_GROUPS.keys():
     group_df = group_df.sort_values(sort_options[selected_sort], ascending=ascending).reset_index(drop=True)
 
     styled_df = style_table(group_df[display_columns]).format({
-        "Observation Age (min)": "{:.1f}",
+        "Observation Age (min)": "{:.0f}",
         "Temp (F)": "{:.1f}",
         "Dew Point (F)": "{:.1f}",
         "RH (%)": "{:.1f}",
@@ -296,12 +342,8 @@ for group_name in LOCATION_GROUPS.keys():
         "Heat Index (F)": "{:.1f}",
     }, na_rep="")
 
-    st.dataframe(
-        styled_df,
-        use_container_width=True,
-        hide_index=True,
-        height=min(600, 45 + len(group_df) * 38)
-    )
+    table_height = min(600, 45 + len(group_df) * 38)
+    render_html_table(styled_df, table_height)
 
 st.markdown(
     """
@@ -320,7 +362,8 @@ st.markdown(
     """
 )
 
-st.caption(f"Last page render: {datetime.now(CENTRAL_TZ).strftime('%-m/%-d %-I:%M%p').lower()} CT")
+now_ct = datetime.now(CENTRAL_TZ)
+st.caption(f"Last page render: {now_ct.month}/{now_ct.day} {now_ct.strftime('%I:%M%p').lstrip('0').lower()} CT")
 
 st.markdown(
     f"""
