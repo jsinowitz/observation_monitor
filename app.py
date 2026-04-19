@@ -47,6 +47,186 @@ LOCATION_GROUPS = {
         "Aulani Resort and Spa": "2274485",
     }
 }
+
+FIELD_MAP = {
+    "Temp (F)": ("Temperature", "Imperial", "Value"),
+    "Dew Point (F)": ("DewPoint", "Imperial", "Value"),
+    "RH (%)": ("RelativeHumidity",),
+    "Wind Speed (mph)": ("Wind", "Speed", "Imperial", "Value"),
+    "Wind Gust (mph)": ("WindGust", "Speed", "Imperial", "Value"),
+    "Wind Dir (deg)": ("Wind", "Direction", "Degrees"),
+    "Wind Dir": ("Wind", "Direction", "Localized"),
+    "Heat Index (F)": None,
+    "Observation Time (CT)": ("LocalObservationDateTime",),
+}
+
+def safe_get(d, *keys):
+    cur = d
+    for k in keys:
+        if cur is None:
+            return None
+        cur = cur.get(k)
+    return cur
+
+@st.cache_data(ttl=120, show_spinner=False)
+def get_historical_conditions_24(location_key):
+    url = f"{BASE_URL}/currentconditions/v1/{location_key}/historical/24"
+    params = {
+        "apikey": API_KEY,
+        "details": "true"
+    }
+    r = requests.get(url, params=params, timeout=30)
+    r.raise_for_status()
+    payload = r.json()
+    return payload if isinstance(payload, list) else []
+
+def parse_obs_dt(obs_time):
+    if not obs_time:
+        return None
+    try:
+        return datetime.fromisoformat(obs_time)
+    except Exception:
+        return None
+
+def format_obs_time_ct_short(obs_time):
+    if not obs_time:
+        return ""
+    try:
+        dt = datetime.fromisoformat(obs_time).astimezone(CENTRAL_TZ)
+        month = dt.month
+        day = dt.day
+        hour12 = dt.strftime("%I").lstrip("0") or "0"
+        minute = dt.strftime("%M")
+        ampm = dt.strftime("%p").lower()
+        return f"{month}/{day} {hour12}:{minute}{ampm}"
+    except Exception:
+        return obs_time
+
+def history_last_hour(location_key):
+    records = get_historical_conditions_24(location_key)
+    parsed = []
+    for rec in records:
+        obs_time = rec.get("LocalObservationDateTime")
+        dt = parse_obs_dt(obs_time)
+        if dt is not None:
+            parsed.append((dt, rec))
+
+    if not parsed:
+        return []
+
+    parsed.sort(key=lambda x: x[0])
+    latest_dt = parsed[-1][0]
+    cutoff = latest_dt.timestamp() - 3600
+
+    return [rec for dt, rec in parsed if dt.timestamp() >= cutoff]
+
+def history_all_variables_df(site_name, location_key):
+    records = history_last_hour(location_key)
+
+    rows = []
+    for rec in records:
+        temp_f = round1(safe_get(rec, "Temperature", "Imperial", "Value"))
+        rh = round1(rec.get("RelativeHumidity"))
+        rows.append({
+            "Site": site_name,
+            "Observation Time (CT)": format_obs_time_ct_short(rec.get("LocalObservationDateTime")),
+            "Temp (F)": temp_f,
+            "Dew Point (F)": round1(safe_get(rec, "DewPoint", "Imperial", "Value")),
+            "RH (%)": rh,
+            "Wind Speed (mph)": round1(safe_get(rec, "Wind", "Speed", "Imperial", "Value")),
+            "Wind Gust (mph)": round1(safe_get(rec, "WindGust", "Speed", "Imperial", "Value")),
+            "Wind Dir (deg)": round1(safe_get(rec, "Wind", "Direction", "Degrees")),
+            "Wind Dir": safe_get(rec, "Wind", "Direction", "Localized"),
+            "Heat Index (F)": heat_index_f(temp_f, rh),
+        })
+
+    return pd.DataFrame(rows)
+
+def history_single_variable_df(site_name, location_key, column_name):
+    records = history_last_hour(location_key)
+    rows = []
+
+    for rec in records:
+        temp_f = round1(safe_get(rec, "Temperature", "Imperial", "Value"))
+        rh = round1(rec.get("RelativeHumidity"))
+
+        if column_name == "Heat Index (F)":
+            value = heat_index_f(temp_f, rh)
+        elif column_name == "Observation Time (CT)":
+            value = format_obs_time_ct_short(rec.get("LocalObservationDateTime"))
+        else:
+            field_path = FIELD_MAP.get(column_name)
+            value = round1(safe_get(rec, *field_path)) if field_path and column_name != "Wind Dir" else (
+                safe_get(rec, *field_path) if field_path else None
+            )
+
+        rows.append({
+            "Site": site_name,
+            "Observation Time (CT)": format_obs_time_ct_short(rec.get("LocalObservationDateTime")),
+            column_name: value,
+        })
+
+    return pd.DataFrame(rows)
+
+def render_history_panel(selection, group_df):
+    if not selection or "selection" not in selection:
+        return
+
+    selected_rows = selection["selection"].get("rows", [])
+    selected_columns = selection["selection"].get("columns", [])
+    selected_cells = selection["selection"].get("cells", [])
+
+    if not selected_rows and not selected_cells:
+        return
+
+    table_df = group_df.reset_index(drop=True)
+
+    if selected_cells:
+        cell = selected_cells[0]
+        row_idx = cell["row"]
+        col_name = cell["column"]
+
+        if row_idx >= len(table_df):
+            return
+
+        site_name = table_df.loc[row_idx, "Site"]
+        location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
+
+        if col_name not in display_columns:
+            return
+
+        with st.expander(f"Last hour for {site_name} — {col_name}", expanded=True):
+            hist_df = history_single_variable_df(site_name, location_key, col_name)
+            if hist_df.empty:
+                st.info("No historical data returned for the past hour.")
+            else:
+                st.dataframe(
+                    hist_df,
+                    width="content",
+                    hide_index=True
+                )
+        return
+
+    if selected_rows:
+        row_idx = selected_rows[0]
+
+        if row_idx >= len(table_df):
+            return
+
+        site_name = table_df.loc[row_idx, "Site"]
+        location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
+
+        with st.expander(f"Last hour for {site_name}", expanded=True):
+            hist_df = history_all_variables_df(site_name, location_key)
+            if hist_df.empty:
+                st.info("No historical data returned for the past hour.")
+            else:
+                st.dataframe(
+                    hist_df,
+                    width="content",
+                    hide_index=True
+                )
+
 def get_current_conditions(location_key):
     url = f"{BASE_URL}/currentconditions/v1/{location_key}"
     params = {
@@ -305,36 +485,8 @@ for group_name in LOCATION_GROUPS.keys():
     st.subheader(group_name)
 
     group_df = df[df["Group"] == group_name].copy()
-
+    group_df = group_df.reset_index(drop=True)
     group_df = group_df.dropna(subset=["Site"])
-
-    sort_options = {
-        "Site": ["Site", "Heat Index (F)"],
-        "Heat Index (high to low)": ["Heat Index (F)", "Site"],
-        "Temperature (high to low)": ["Temp (F)", "Site"],
-        "Newest obs first": ["Observation Age (min)", "Site"],
-        "Oldest obs first": ["Observation Age (min)", "Site"],
-    }
-
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        selected_sort = st.selectbox(
-            f"Sort order for {group_name}",
-            list(sort_options.keys()),
-            key=f"sort_{group_name}"
-        )
-
-    ascending = [True, True]
-    if selected_sort == "Heat Index (high to low)":
-        ascending = [False, True]
-    elif selected_sort == "Temperature (high to low)":
-        ascending = [False, True]
-    elif selected_sort == "Newest obs first":
-        ascending = [True, True]
-    elif selected_sort == "Oldest obs first":
-        ascending = [False, True]
-
-    group_df = group_df.sort_values(sort_options[selected_sort], ascending=ascending).reset_index(drop=True)
 
     styled_df = style_table(group_df[display_columns]).format({
         "Observation Age (min)": "{:.0f}",
@@ -347,11 +499,29 @@ for group_name in LOCATION_GROUPS.keys():
         "Heat Index (F)": "{:.1f}",
     }, na_rep="")
     
-    st.dataframe(
+    table_df = group_df[display_columns].copy()
+
+    styled_df = style_table(table_df).format({
+        "Observation Age (min)": "{:.0f}",
+        "Temp (F)": "{:.1f}",
+        "Dew Point (F)": "{:.1f}",
+        "RH (%)": "{:.1f}",
+        "Wind Speed (mph)": "{:.1f}",
+        "Wind Gust (mph)": "{:.1f}",
+        "Wind Dir (deg)": "{:.1f}",
+        "Heat Index (F)": "{:.1f}",
+    }, na_rep="")
+
+    event = st.dataframe(
         styled_df,
         width="content",
-        hide_index=True
+        hide_index=True,
+        key=f"table_{group_name}",
+        on_select="rerun",
+        selection_mode=["single-row", "single-cell"]
     )
+
+    render_history_panel(event, group_df)
 
 st.markdown(
     """
