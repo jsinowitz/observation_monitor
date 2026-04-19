@@ -4,7 +4,6 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Disney Heat Index Dashboard", layout="wide")
 
@@ -194,62 +193,6 @@ def style_table(df):
 
     return df.style.apply(apply_row_style, axis=1)
 
-def render_html_table(styled_df, table_height):
-    html_table = styled_df.to_html(index=False)
-
-    html = f"""
-    <html>
-    <head>
-        <style>
-            body {{
-                margin: 0;
-                padding: 0;
-                font-family: sans-serif;
-                background: white;
-            }}
-
-            .dashboard-table-wrap {{
-                max-height: {table_height}px;
-                overflow-y: auto;
-                overflow-x: auto;
-                border: 1px solid #ddd;
-                border-radius: 0.5rem;
-                background: white;
-            }}
-
-            table {{
-                border-collapse: collapse;
-                width: 100%;
-                font-size: 14px;
-            }}
-
-            thead th {{
-                position: sticky;
-                top: 0;
-                background-color: white;
-                z-index: 10;
-                border-bottom: 2px solid #ccc;
-                text-align: left;
-                padding: 8px;
-                white-space: nowrap;
-            }}
-
-            tbody td {{
-                padding: 8px;
-                border-bottom: 1px solid #eee;
-                white-space: nowrap;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="dashboard-table-wrap">
-            {html_table}
-        </div>
-    </body>
-    </html>
-    """
-
-    components.html(html, height=table_height + 20, scrolling=False)
 
 def build_status_cards(df):
     total_sites = len(df)
@@ -353,8 +296,12 @@ for group_name in LOCATION_GROUPS.keys():
         "Heat Index (F)": "{:.1f}",
     }, na_rep="")
 
-    table_height = min(600, 45 + len(group_df) * 38)
-    render_html_table(styled_df, table_height)
+    st.dataframe(
+        styled_df,
+        width="stretch",
+        hide_index=True,
+        height=min(600, 45 + len(group_df) * 38)
+    )
 
 st.markdown(
     """
