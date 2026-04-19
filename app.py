@@ -181,7 +181,7 @@ def extract_row(group_name, site_name, key, c):
     rh = round1(c.get("RelativeHumidity"))
     wind_speed = round1(wind.get("Speed", {}).get("Imperial", {}).get("Value"))
     wind_gust = round1(c.get("WindGust", {}).get("Speed", {}).get("Imperial", {}).get("Value"))
-    wind_dir_deg = round1(wind.get("Direction", {}).get("Degrees"))
+    # wind_dir_deg = round1(wind.get("Direction", {}).get("Degrees"))
     wind_dir = wind.get("Direction", {}).get("Localized")
     obs_time_raw = c.get("LocalObservationDateTime")
     age_min = obs_age_minutes(obs_time_raw)
@@ -197,7 +197,7 @@ def extract_row(group_name, site_name, key, c):
         "RH (%)": rh,
         "Wind Speed (mph)": wind_speed,
         "Wind Gust (mph)": wind_gust,
-        "Wind Dir (deg)": wind_dir_deg,
+        # "Wind Dir (deg)": wind_dir_deg,
         "Wind Dir": wind_dir,
         "Heat Index (F)": hi,
         "Heat Index Band": heat_index_band(hi),
