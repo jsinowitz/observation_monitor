@@ -20,9 +20,9 @@ else:
     PURPLE_MIN = 105
     
 st.set_page_config(page_title="Disney Heat Index Dashboard", layout="wide")
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
-supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+SUPABASE_URL = st.secrets["SUPABASE_URL"].strip()
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"].strip()
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 BASE_URL = "http://apidev.accuweather.com"
 API_KEY = st.secrets["ACCUWEATHER_API_KEY"]
 CENTRAL_TZ = ZoneInfo("America/Chicago")
