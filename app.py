@@ -10,7 +10,7 @@ st.set_page_config(page_title="Disney Heat Index Dashboard", layout="wide")
 
 BASE_URL = "http://apidev.accuweather.com"
 API_KEY = st.secrets["ACCUWEATHER_API_KEY"]
-
+CENTRAL_TZ = ZoneInfo("America/Chicago")
 REFRESH_SECONDS = 120
 STALE_MINUTES = 30
 
