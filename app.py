@@ -73,14 +73,50 @@ def format_obs_time_ct_short(obs_time):
     except Exception:
         return obs_time
 
+# def history_all_variables_df(site_name, location_key):
+#     cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+#     result = (
+#         supabase.table("observations")
+#         .select(
+#             "site_name, obs_time_ct, temp_f, dewpoint_f, rh, "
+#             "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f"
+#         )
+#         .eq("location_key", location_key)
+#         .eq("keep_sample", True)
+#         .gte("obs_time_utc", cutoff)
+#         .order("obs_time_utc")
+#         .execute()
+#     )
+
+#     rows = result.data or []
+
+#     return pd.DataFrame([
+#         {
+#             "Site": r["site_name"],
+#             "Observation Time (CT)": r["obs_time_ct"],
+#             "Temp (F)": r["temp_f"],
+#             "Dew Point (F)": r["dewpoint_f"],
+#             "RH (%)": r["rh"],
+#             "Wind Speed (mph)": r["wind_speed_mph"],
+#             "Wind Gust (mph)": r["wind_gust_mph"],
+#             "Wind Dir": r["wind_dir"],
+#             "Heat Index (F)": r["heat_index_f"],
+#         }
+#         for r in rows
+#     ])
 def history_all_variables_df(site_name, location_key):
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+    st.write("DEBUG site:", site_name)
+    st.write("DEBUG key:", location_key)
+    st.write("DEBUG cutoff:", cutoff)
 
     result = (
         supabase.table("observations")
         .select(
-            "site_name, obs_time_ct, temp_f, dewpoint_f, rh, "
-            "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f"
+            "site_name, obs_time_ct, obs_time_utc, temp_f, dewpoint_f, rh, "
+            "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f, location_key"
         )
         .eq("location_key", location_key)
         .eq("keep_sample", True)
@@ -90,6 +126,8 @@ def history_all_variables_df(site_name, location_key):
     )
 
     rows = result.data or []
+    st.write("DEBUG rows returned:", len(rows))
+    st.write("DEBUG sample rows:", rows[:3])
 
     return pd.DataFrame([
         {
@@ -105,7 +143,6 @@ def history_all_variables_df(site_name, location_key):
         }
         for r in rows
     ])
-
 def history_single_variable_df(site_name, location_key, column_name):
     column_map = {
         "Temp (F)": "temp_f",
