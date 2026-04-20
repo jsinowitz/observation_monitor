@@ -74,11 +74,21 @@ def format_obs_time_ct_short(obs_time):
         return obs_time
 
 def history_all_variables_df(site_name, location_key):
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    latest_result = (
+        supabase.table("observations")
+        .select("obs_time_utc")
+        .eq("location_key", location_key)
+        .order("obs_time_utc", desc=True)
+        .limit(1)
+        .execute()
+    )
 
-    st.write("DEBUG site:", site_name)
-    st.write("DEBUG key:", location_key)
-    st.write("DEBUG cutoff:", cutoff)
+    latest_rows = latest_result.data or []
+    if not latest_rows:
+        return pd.DataFrame()
+
+    latest_obs = datetime.fromisoformat(latest_rows[0]["obs_time_utc"].replace("Z", "+00:00"))
+    cutoff = (latest_obs - timedelta(hours=1)).isoformat()
 
     result = (
         supabase.table("observations")
@@ -93,8 +103,6 @@ def history_all_variables_df(site_name, location_key):
     )
 
     rows = result.data or []
-    st.write("DEBUG rows returned:", len(rows))
-    st.write("DEBUG sample rows:", rows[:3])
 
     return pd.DataFrame([
         {
@@ -118,7 +126,6 @@ def history_single_variable_df(site_name, location_key, column_name):
         "RH (%)": "rh",
         "Wind Speed (mph)": "wind_speed_mph",
         "Wind Gust (mph)": "wind_gust_mph",
-        "Wind Dir (deg)": "wind_dir_deg",
         "Wind Dir": "wind_dir",
         "Heat Index (F)": "heat_index_f",
     }
@@ -126,12 +133,26 @@ def history_single_variable_df(site_name, location_key, column_name):
     if column_name not in column_map:
         return pd.DataFrame()
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    latest_result = (
+        supabase.table("observations")
+        .select("obs_time_utc")
+        .eq("location_key", location_key)
+        .order("obs_time_utc", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    latest_rows = latest_result.data or []
+    if not latest_rows:
+        return pd.DataFrame()
+
+    latest_obs = datetime.fromisoformat(latest_rows[0]["obs_time_utc"].replace("Z", "+00:00"))
+    cutoff = (latest_obs - timedelta(hours=1)).isoformat()
     db_col = column_map[column_name]
 
     result = (
         supabase.table("observations")
-        .select(f"site_name, obs_time_ct, {db_col}")
+        .select(f"site_name, obs_time_ct, {db_col}, obs_time_utc")
         .eq("location_key", location_key)
         .gte("obs_time_utc", cutoff)
         .order("obs_time_utc")
