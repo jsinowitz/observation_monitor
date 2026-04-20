@@ -121,7 +121,9 @@ def history_single_variable_df(site_name, location_key, column_name):
         "Heat Index (F)": "heat_index_f",
     }
 
-    if column_name not in column_map:
+    is_band = column_name == "Heat Index Band"
+    
+    if column_name not in column_map and not is_band:
         return pd.DataFrame()
 
     latest_result = (
@@ -139,11 +141,31 @@ def history_single_variable_df(site_name, location_key, column_name):
 
     latest_inserted = datetime.fromisoformat(latest_rows[0]["inserted_at"].replace("Z", "+00:00"))
     cutoff = (latest_inserted - timedelta(hours=1)).isoformat()
-    db_col = column_map[column_name]
+    # db_col = column_map[column_name]
 
+    # result = (
+    #     supabase.table("observations")
+    #     .select(f"site_name, inserted_at, {db_col}")
+    #     .eq("site_name", site_name)
+    #     .gte("inserted_at", cutoff)
+    #     .order("inserted_at")
+    #     .execute()
+    # )
+
+    # rows = result.data or []
+
+    # return pd.DataFrame([
+    #     {
+    #         "Site": r["site_name"],
+    #         "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
+    #         column_name: r[db_col],
+    #     }
+    #     for r in rows
+    # ])
+    if is_band:
     result = (
         supabase.table("observations")
-        .select(f"site_name, inserted_at, {db_col}")
+        .select("site_name, inserted_at, heat_index_f")
         .eq("site_name", site_name)
         .gte("inserted_at", cutoff)
         .order("inserted_at")
@@ -156,11 +178,10 @@ def history_single_variable_df(site_name, location_key, column_name):
         {
             "Site": r["site_name"],
             "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
-            column_name: r[db_col],
+            "Heat Index Band": heat_index_band(r["heat_index_f"]),
         }
         for r in rows
     ])
-    
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
         return
