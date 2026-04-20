@@ -442,7 +442,7 @@ def render_history_panel(selection, group_df):
                 with right_col:
                     fig = build_history_chart(hist_df, col_name)
                     if fig is not None:
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width="stretch")
                     
 def get_current_conditions(location_key):
     url = f"{BASE_URL}/currentconditions/v1/{location_key}"
