@@ -112,82 +112,6 @@ def history_all_variables_df(site_name, location_key):
         for r in rows
     ])
 
-# def history_single_variable_df(site_name, location_key, column_name):
-#     column_map = {
-#         "Temp (F)": "temp_f",
-#         "Dew Point (F)": "dewpoint_f",
-#         "RH (%)": "rh",
-#         "Wind Speed (mph)": "wind_speed_mph",
-#         "Wind Gust (mph)": "wind_gust_mph",
-#         "Wind Dir": "wind_dir",
-#         "Heat Index (F)": "heat_index_f",
-#     }
-
-#     is_band = column_name == "Heat Index Band"
-
-#     if column_name not in column_map and not is_band:
-#         return pd.DataFrame()
-
-#     latest_result = (
-#         supabase.table("observations")
-#         .select("inserted_at")
-#         .eq("site_name", site_name)
-#         .order("inserted_at", desc=True)
-#         .limit(1)
-#         .execute()
-#     )
-
-#     latest_rows = latest_result.data or []
-#     if not latest_rows:
-#         return pd.DataFrame()
-
-#     latest_inserted = datetime.fromisoformat(
-#         latest_rows[0]["inserted_at"].replace("Z", "+00:00")
-#     )
-#     cutoff = (latest_inserted - timedelta(hours=1)).isoformat()
-
-#     if is_band:
-#         result = (
-#             supabase.table("observations")
-#             .select("site_name, inserted_at, heat_index_f")
-#             .eq("site_name", site_name)
-#             .gte("inserted_at", cutoff)
-#             .order("inserted_at")
-#             .execute()
-#         )
-
-#         rows = result.data or []
-
-#         return pd.DataFrame([
-#             {
-#                 "Site": r["site_name"],
-#                 "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
-#                 "Heat Index Band": heat_index_band(r["heat_index_f"]),
-#             }
-#             for r in rows
-#         ])
-
-#     db_col = column_map[column_name]
-
-#     result = (
-#         supabase.table("observations")
-#         .select(f"site_name, inserted_at, {db_col}")
-#         .eq("site_name", site_name)
-#         .gte("inserted_at", cutoff)
-#         .order("inserted_at")
-#         .execute()
-#     )
-
-#     rows = result.data or []
-
-#     return pd.DataFrame([
-#         {
-#             "Site": r["site_name"],
-#             "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
-#             column_name: r[db_col],
-#         }
-#         for r in rows
-#     ])
 def history_single_variable_df(site_name, location_key, column_name):
     column_map = {
         "Temp (F)": "temp_f",
@@ -276,7 +200,6 @@ def history_chart_series(hist_df, column_name):
     df = hist_df.copy()
     df["dt"] = pd.to_datetime(df["Observation Time (CT)"], format="%m/%d %I:%M%p", errors="coerce")
 
-    # Fallback: if parsing fails, build from display order only
     if df["dt"].isna().all():
         df["x_label"] = df["Observation Time (CT)"].astype(str)
     else:
@@ -291,6 +214,9 @@ def history_chart_series(hist_df, column_name):
     elif column_name == "Dew Point (F)":
         chart_col = "Dew Point (F)"
         y_min = 50
+    elif column_name == "RH (%)":
+        chart_col = "RH (%)"
+        y_min = 0
     elif column_name in ["Wind Speed (mph)", "Wind Gust (mph)"]:
         chart_col = column_name
         y_min = 0
@@ -313,13 +239,15 @@ def is_dark_theme():
         
 def solid_line_color(column_name):
     if column_name == "Temp (F)":
-        return "#d32f2f"   # red
+        return "#d32f2f"
     if column_name == "Dew Point (F)":
-        return "#2e7d32"   # green
+        return "#2e7d32"
+    if column_name == "RH (%)":
+        return "#d4ff00"
     if column_name == "Wind Speed (mph)":
-        return "#2196f3"   # blue
+        return "#2196f3"
     if column_name == "Wind Gust (mph)":
-        return "#8e24aa"   # purple
+        return "#8e24aa"
     return "#90caf9"
 
 def hi_segment_color(hi_value):
@@ -341,12 +269,14 @@ def build_history_chart(hist_df, column_name):
     x = plot_df["x_label"].tolist()
     y = plot_df["y"].tolist()
 
-    # --- Units ---
     if column_name in ["Temp (F)", "Dew Point (F)", "Heat Index (F)", "Heat Index Band"]:
         unit = "°F"
         y_floor = 70 if column_name in ["Heat Index (F)", "Heat Index Band"] else (
             60 if column_name == "Temp (F)" else 50
         )
+    elif column_name == "RH (%)":
+        unit = "%"
+        y_floor = 0
     else:
         unit = "mph"
         y_floor = 0
@@ -355,7 +285,6 @@ def build_history_chart(hist_df, column_name):
 
     fig = go.Figure()
 
-    # --- HEAT INDEX (SEGMENT COLORING) ---
     if column_name in ["Heat Index (F)", "Heat Index Band"]:
         for i in range(len(y) - 1):
             fig.add_trace(go.Scatter(
@@ -366,7 +295,6 @@ def build_history_chart(hist_df, column_name):
                 marker=dict(color=hi_segment_color(y[i+1]), size=6),
                 hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>"
             ))
-
     else:
         fig.add_trace(go.Scatter(
             x=x,
@@ -377,12 +305,11 @@ def build_history_chart(hist_df, column_name):
             hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>"
         ))
 
-    # --- Layout ---
     fig.update_layout(
         height=260,
         margin=dict(l=20, r=20, t=10, b=20),
         xaxis=dict(
-            tickmode='array',
+            tickmode="array",
             tickvals=x,
             ticktext=x
         ),
