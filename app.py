@@ -405,7 +405,7 @@ def build_status_cards(df):
     c8.metric("Purple Rows", purple_count)
 
 st.title("Disney Heat Index Dashboard")
-st.caption(f"Auto-refresh every {REFRESH_SECONDS} seconds")
+st.caption("Auto-refresh every 2 minutes")
 
 rows, errors = fetch_all_data()
 
@@ -481,6 +481,12 @@ st.markdown(
 
     **Time Zone Note**
     - Observation times are displayed in Central Time
+
+    ---
+    Click on any site name to pull up the last hour's data for all variables.  
+    Click on any single variable data cell to display the last hour's data for that variable.
+
+    Click on any one column header to sort it by ascending or descending.
     """
 )
 
