@@ -103,7 +103,7 @@ def history_all_variables_df(site_name, location_key):
     )
 
     rows = result.data or []
-
+    st.write(rows[:5])
     return pd.DataFrame([
         {
             "Site": r["site_name"],
