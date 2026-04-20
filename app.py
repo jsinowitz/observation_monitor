@@ -163,24 +163,24 @@ def history_single_variable_df(site_name, location_key, column_name):
     #     for r in rows
     # ])
     if is_band:
-    result = (
-        supabase.table("observations")
-        .select("site_name, inserted_at, heat_index_f")
-        .eq("site_name", site_name)
-        .gte("inserted_at", cutoff)
-        .order("inserted_at")
-        .execute()
-    )
-
-    rows = result.data or []
-
-    return pd.DataFrame([
-        {
-            "Site": r["site_name"],
-            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
-            "Heat Index Band": heat_index_band(r["heat_index_f"]),
-        }
-        for r in rows
+        result = (
+            supabase.table("observations")
+            .select("site_name, inserted_at, heat_index_f")
+            .eq("site_name", site_name)
+            .gte("inserted_at", cutoff)
+            .order("inserted_at")
+            .execute()
+        )
+    
+        rows = result.data or []
+    
+        return pd.DataFrame([
+            {
+                "Site": r["site_name"],
+                "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
+                "Heat Index Band": heat_index_band(r["heat_index_f"]),
+            }
+            for r in rows
     ])
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
