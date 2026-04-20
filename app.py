@@ -118,7 +118,6 @@ def history_all_variables_df(site_name, location_key):
         }
         for r in rows
     ])
-
 def history_single_variable_df(site_name, location_key, column_name):
     column_map = {
         "Temp (F)": "temp_f",
