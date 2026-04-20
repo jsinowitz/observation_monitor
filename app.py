@@ -192,7 +192,7 @@ def render_history_panel(selection, group_df):
                         "Wind Gust (mph)": "{:.1f}",
                         "Heat Index (F)": "{:.1f}",
                     }, na_rep=""),
-                    width=900,
+                    width=950,
                     hide_index=True
                 )
         return
