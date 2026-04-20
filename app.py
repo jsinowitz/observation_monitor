@@ -7,6 +7,7 @@ import streamlit as st
 from supabase import create_client
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
+import plotly.graph_objects as go
 
 YELLOW_MIN = 90
 ORANGE_MIN = 95
@@ -283,7 +284,7 @@ def history_chart_series(hist_df, column_name):
 
     if column_name in ["Heat Index (F)", "Heat Index Band"]:
         chart_col = "Heat Index (F)"
-        y_min = 80
+        y_min = 70
     elif column_name == "Temp (F)":
         chart_col = "Temp (F)"
         y_min = 60
@@ -303,21 +304,27 @@ def history_chart_series(hist_df, column_name):
     out["x"] = range(len(out))
     out["y_min"] = y_min
     return out
-
+    
+def is_dark_theme():
+    try:
+        return st.get_option("theme.base") == "dark"
+    except Exception:
+        return False
+        
 def solid_line_color(column_name):
     if column_name == "Temp (F)":
-        return "#d32f2f"
+        return "#d32f2f"   # red
     if column_name == "Dew Point (F)":
-        return "#2e7d32"
+        return "#2e7d32"   # green
     if column_name == "Wind Speed (mph)":
-        return "#ffffff"
+        return "#2196f3"   # blue
     if column_name == "Wind Gust (mph)":
-        return "#ffeb3b"
+        return "#8e24aa"   # purple
     return "#90caf9"
 
 def hi_segment_color(hi_value):
     if hi_value is None or pd.isna(hi_value) or hi_value < YELLOW_MIN:
-        return "#ffffff"
+        return "#000000"
     if hi_value < ORANGE_MIN:
         return "#fff59d"
     if hi_value < RED_MIN:
@@ -331,38 +338,61 @@ def build_history_chart(hist_df, column_name):
     if plot_df.empty:
         return None
 
-    x = plot_df["x"].to_numpy()
-    y = plot_df["y"].to_numpy()
+    x = plot_df["x_label"].tolist()
+    y = plot_df["y"].tolist()
 
-    y_floor = float(plot_df["y_min"].iloc[0])
-    y_ceiling = max(y.max() + 5, y_floor + 10)
-    y_ticks = list(range(int(y_floor), int(y_ceiling) + 1, 10))
-
-    fig, ax = plt.subplots(figsize=(6.2, 3.2))
-
-    if column_name in ["Heat Index (F)", "Heat Index Band"]:
-        if len(plot_df) >= 2:
-            points = list(zip(x, y))
-            segments = [[points[i], points[i + 1]] for i in range(len(points) - 1)]
-            segment_colors = [hi_segment_color(y[i + 1]) for i in range(len(y) - 1)]
-            lc = LineCollection(segments, colors=segment_colors, linewidths=2.5)
-            ax.add_collection(lc)
-
-        point_colors = [hi_segment_color(v) for v in y]
-        ax.scatter(x, y, c=point_colors, s=36, zorder=3)
+    # --- Units ---
+    if column_name in ["Temp (F)", "Dew Point (F)", "Heat Index (F)", "Heat Index Band"]:
+        unit = "°F"
+        y_floor = 70 if column_name in ["Heat Index (F)", "Heat Index Band"] else (
+            60 if column_name == "Temp (F)" else 50
+        )
     else:
-        line_color = solid_line_color(column_name)
-        ax.plot(x, y, linewidth=2.5, marker="o", markersize=5, color=line_color)
+        unit = "mph"
+        y_floor = 0
 
-    ax.set_xlim(-0.2, len(x) - 0.8 if len(x) > 1 else 0.8)
-    ax.set_ylim(y_floor, y_ceiling)
-    ax.set_xticks(x)
-    ax.set_xticklabels(plot_df["x_label"].tolist(), rotation=0)
-    ax.set_yticks(y_ticks)
-    ax.grid(True, axis="y", alpha=0.3)
-    ax.set_xlabel("")
-    ax.set_ylabel("")
-    fig.tight_layout()
+    y_ceiling = max(max(y) + 5, y_floor + 10)
+
+    fig = go.Figure()
+
+    # --- HEAT INDEX (SEGMENT COLORING) ---
+    if column_name in ["Heat Index (F)", "Heat Index Band"]:
+        for i in range(len(y) - 1):
+            fig.add_trace(go.Scatter(
+                x=[x[i], x[i+1]],
+                y=[y[i], y[i+1]],
+                mode="lines+markers",
+                line=dict(color=hi_segment_color(y[i+1]), width=3),
+                marker=dict(color=hi_segment_color(y[i+1]), size=6),
+                hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>"
+            ))
+
+    else:
+        fig.add_trace(go.Scatter(
+            x=x,
+            y=y,
+            mode="lines+markers",
+            line=dict(color=solid_line_color(column_name), width=3),
+            marker=dict(size=6),
+            hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>"
+        ))
+
+    # --- Layout ---
+    fig.update_layout(
+        height=260,
+        margin=dict(l=20, r=20, t=10, b=20),
+        xaxis=dict(
+            tickmode='array',
+            tickvals=x,
+            ticktext=x
+        ),
+        yaxis=dict(
+            range=[y_floor, y_ceiling],
+            dtick=10
+        ),
+        showlegend=False
+    )
+
     return fig
     
 def render_history_panel(selection, group_df):
@@ -438,26 +468,26 @@ def render_history_panel(selection, group_df):
             if hist_df.empty:
                 st.info("No historical data returned for the past hour.")
             else:
-                left_col, right_col = st.columns([1.2, 1.8], vertical_alignment="top")
+                left_col, right_col = st.columns([1.8, 1.2], vertical_alignment="top")
 
-                with left_col:
-                    fig = build_history_chart(hist_df, col_name)
-                    if fig is not None:
-                        st.pyplot(fig, clear_figure=True, use_container_width=True)
-
-                with right_col:
-                    st.dataframe(
-                        style_table(hist_df).format({
-                            "Temp (F)": "{:.1f}",
-                            "Dew Point (F)": "{:.1f}",
-                            "RH (%)": "{:.1f}",
-                            "Wind Speed (mph)": "{:.1f}",
-                            "Wind Gust (mph)": "{:.1f}",
-                            "Heat Index (F)": "{:.1f}",
-                        }, na_rep=""),
-                        width=950,
-                        hide_index=True
-                    )
+            with left_col:
+                st.dataframe(
+                    style_table(hist_df).format({
+                        "Temp (F)": "{:.1f}",
+                        "Dew Point (F)": "{:.1f}",
+                        "RH (%)": "{:.1f}",
+                        "Wind Speed (mph)": "{:.1f}",
+                        "Wind Gust (mph)": "{:.1f}",
+                        "Heat Index (F)": "{:.1f}",
+                    }, na_rep=""),
+                    width=950,
+                    hide_index=True
+                )
+            
+            with right_col:
+                fig = build_history_chart(hist_df, col_name)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
                 
 def get_current_conditions(location_key):
     url = f"{BASE_URL}/currentconditions/v1/{location_key}"
