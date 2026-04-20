@@ -24,6 +24,9 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"].strip()
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"].strip()
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+
+
+st.error("SUPABASE DEBUG MARKER")
 try:
     sanity = (
         supabase.table("observations")
@@ -36,7 +39,6 @@ try:
     st.write("SUPABASE SANITY:", sanity.data)
 except Exception as e:
     st.error(f"Supabase sanity query failed: {e}")
-
 
 
 BASE_URL = "http://apidev.accuweather.com"
@@ -202,13 +204,14 @@ def render_history_panel(selection, group_df):
         site_name = table_df.loc[row_idx, "Site"]
         location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
 
-        with st.expander(f"Last hour for {site_name}", expanded=True):
-            hist_df = history_all_variables_df(site_name, location_key)
-            if hist_df.empty:
-                st.info("No historical data returned for the past hour.")
-            else:
-                st.dataframe(hist_df, width="content", hide_index=True)
-        return
+    with st.expander(f"Last hour for {site_name} — {col_name}", expanded=True):
+        hist_df = history_single_variable_df(site_name, location_key, col_name)
+        st.write("HIST_DF SHAPE:", hist_df.shape)
+        st.write(hist_df.head())
+        if hist_df.empty:
+            st.info("No historical data returned for the past hour.")
+        else:
+            st.dataframe(hist_df, width="content", hide_index=True)
 
     # If a cell is selected, show either all vars (for Site) or one variable
     if selected_cells:
