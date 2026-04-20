@@ -29,6 +29,14 @@ CENTRAL_TZ = ZoneInfo("America/Chicago")
 REFRESH_SECONDS = 120
 STALE_MINUTES = 30
 
+st.write("DEBUG site:", site_name)
+st.write("DEBUG key:", location_key)
+st.write("DEBUG cutoff:", cutoff)
+st.write("DEBUG rows returned:", len(rows))
+st.write("DEBUG sample rows:", rows[:3])
+
+
+
 LOCATION_GROUPS = {
     "Walt Disney World - Orlando": {
         "Magic Kingdom": "196686_POI",
@@ -76,20 +84,25 @@ def format_obs_time_ct_short(obs_time):
 def history_all_variables_df(site_name, location_key):
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
 
+    st.write("DEBUG site:", site_name)
+    st.write("DEBUG key:", location_key)
+    st.write("DEBUG cutoff:", cutoff)
+
     result = (
         supabase.table("observations")
         .select(
-            "site_name, obs_time_ct, temp_f, dewpoint_f, rh, "
-            "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f"
+            "site_name, obs_time_ct, obs_time_utc, temp_f, dewpoint_f, rh, "
+            "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f, location_key"
         )
         .eq("location_key", location_key)
-        .eq("keep_sample", True)
         .gte("obs_time_utc", cutoff)
         .order("obs_time_utc")
         .execute()
     )
 
     rows = result.data or []
+    st.write("DEBUG rows returned:", len(rows))
+    st.write("DEBUG sample rows:", rows[:3])
 
     return pd.DataFrame([
         {
@@ -128,7 +141,6 @@ def history_single_variable_df(site_name, location_key, column_name):
         supabase.table("observations")
         .select(f"site_name, obs_time_ct, {db_col}")
         .eq("location_key", location_key)
-        .eq("keep_sample", True)
         .gte("obs_time_utc", cutoff)
         .order("obs_time_utc")
         .execute()
@@ -144,7 +156,7 @@ def history_single_variable_df(site_name, location_key, column_name):
         }
         for r in rows
     ])
-
+    
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
         return
