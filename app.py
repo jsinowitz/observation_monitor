@@ -24,7 +24,8 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"].strip()
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"].strip()
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
+st.write("SUPABASE URL:", SUPABASE_URL)
+st.write("SUPABASE KEY PREFIX:", SUPABASE_KEY[:12])
 
 st.error("SUPABASE DEBUG MARKER")
 try:
@@ -195,7 +196,6 @@ def render_history_panel(selection, group_df):
 
     table_df = group_df.reset_index(drop=True)
 
-    # If a row is explicitly selected, show all variables
     if selected_rows:
         row_idx = selected_rows[0]
         if row_idx >= len(table_df):
@@ -204,16 +204,14 @@ def render_history_panel(selection, group_df):
         site_name = table_df.loc[row_idx, "Site"]
         location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
 
-    with st.expander(f"Last hour for {site_name} — {col_name}", expanded=True):
-        hist_df = history_single_variable_df(site_name, location_key, col_name)
-        st.write("HIST_DF SHAPE:", hist_df.shape)
-        st.write(hist_df.head())
-        if hist_df.empty:
-            st.info("No historical data returned for the past hour.")
-        else:
-            st.dataframe(hist_df, width="content", hide_index=True)
+        with st.expander(f"Last hour for {site_name}", expanded=True):
+            hist_df = history_all_variables_df(site_name, location_key)
+            if hist_df.empty:
+                st.info("No historical data returned for the past hour.")
+            else:
+                st.dataframe(hist_df, width="content", hide_index=True)
+        return
 
-    # If a cell is selected, show either all vars (for Site) or one variable
     if selected_cells:
         row_idx, col_name = selected_cells[0]
 
