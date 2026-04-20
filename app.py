@@ -29,14 +29,6 @@ CENTRAL_TZ = ZoneInfo("America/Chicago")
 REFRESH_SECONDS = 120
 STALE_MINUTES = 30
 
-st.write("DEBUG site:", site_name)
-st.write("DEBUG key:", location_key)
-st.write("DEBUG cutoff:", cutoff)
-st.write("DEBUG rows returned:", len(rows))
-st.write("DEBUG sample rows:", rows[:3])
-
-
-
 LOCATION_GROUPS = {
     "Walt Disney World - Orlando": {
         "Magic Kingdom": "196686_POI",
