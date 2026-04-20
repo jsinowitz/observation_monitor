@@ -251,8 +251,12 @@ def solid_line_color(column_name):
     return "#90caf9"
 
 def hi_segment_color(hi_value):
+    dark = is_dark_theme()
+
+    # Below threshold ("None")
     if hi_value is None or pd.isna(hi_value) or hi_value < YELLOW_MIN:
-        return "#000000"
+        return "#ffffff" if dark else "#000000"
+
     if hi_value < ORANGE_MIN:
         return "#fff59d"
     if hi_value < RED_MIN:
