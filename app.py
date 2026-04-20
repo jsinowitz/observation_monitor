@@ -308,21 +308,42 @@ def build_history_chart(hist_df, column_name):
             marker=dict(size=6),
             hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>"
         ))
-
+        
+    if column_name in ["Heat Index (F)", "Heat Index Band"]:
+        title = "Heat Index Over the Last Hour"
+    elif column_name == "Temp (F)":
+        title = "Temperature Over the Last Hour"
+    elif column_name == "Dew Point (F)":
+        title = "Dew Point Over the Last Hour"
+    elif column_name == "RH (%)":
+        title = "Relative Humidity Over the Last Hour"
+    elif column_name == "Wind Speed (mph)":
+        title = "Wind Speed Over the Last Hour"
+    elif column_name == "Wind Gust (mph)":
+        title = "Wind Gusts Over the Last Hour"
+    else:
+        title = f"{column_name} Over the Last Hour"
+        
     fig.update_layout(
-        height=260,
-        margin=dict(l=20, r=20, t=10, b=20),
-        xaxis=dict(
-            tickmode="array",
-            tickvals=x,
-            ticktext=x
-        ),
-        yaxis=dict(
-            range=[y_floor, y_ceiling],
-            dtick=10
-        ),
-        showlegend=False
-    )
+    title=dict(
+        text=title,
+        x=0.5,  # center
+        xanchor="center",
+        font=dict(size=14)
+    ),
+    height=260,
+    margin=dict(l=20, r=20, t=30, b=20),
+    xaxis=dict(
+        tickmode="array",
+        tickvals=x,
+        ticktext=x
+    ),
+    yaxis=dict(
+        range=[y_floor, y_ceiling],
+        dtick=10
+    ),
+    showlegend=False
+)
 
     return fig
     
