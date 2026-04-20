@@ -5,6 +5,8 @@ import pandas as pd
 import requests
 import streamlit as st
 from supabase import create_client
+import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 
 YELLOW_MIN = 90
 ORANGE_MIN = 95
@@ -265,6 +267,103 @@ def history_single_variable_df(site_name, location_key, column_name):
         }
         for r in rows
     ])
+
+def history_chart_series(hist_df, column_name):
+    if hist_df.empty:
+        return pd.DataFrame()
+
+    df = hist_df.copy()
+    df["dt"] = pd.to_datetime(df["Observation Time (CT)"], format="%m/%d %I:%M%p", errors="coerce")
+
+    # Fallback: if parsing fails, build from display order only
+    if df["dt"].isna().all():
+        df["x_label"] = df["Observation Time (CT)"].astype(str)
+    else:
+        df["x_label"] = df["dt"].dt.strftime("%I:%M%p").str.lstrip("0").str.lower()
+
+    if column_name in ["Heat Index (F)", "Heat Index Band"]:
+        chart_col = "Heat Index (F)"
+        y_min = 80
+    elif column_name == "Temp (F)":
+        chart_col = "Temp (F)"
+        y_min = 60
+    elif column_name == "Dew Point (F)":
+        chart_col = "Dew Point (F)"
+        y_min = 50
+    elif column_name in ["Wind Speed (mph)", "Wind Gust (mph)"]:
+        chart_col = column_name
+        y_min = 0
+    else:
+        return pd.DataFrame()
+
+    out = df[["Observation Time (CT)", "x_label", chart_col]].copy()
+    out = out.rename(columns={chart_col: "y"})
+    out["y"] = pd.to_numeric(out["y"], errors="coerce")
+    out = out.dropna(subset=["y"]).reset_index(drop=True)
+    out["x"] = range(len(out))
+    out["y_min"] = y_min
+    return out
+
+def solid_line_color(column_name):
+    if column_name == "Temp (F)":
+        return "#d32f2f"
+    if column_name == "Dew Point (F)":
+        return "#2e7d32"
+    if column_name == "Wind Speed (mph)":
+        return "#ffffff"
+    if column_name == "Wind Gust (mph)":
+        return "#ffeb3b"
+    return "#90caf9"
+
+def hi_segment_color(hi_value):
+    if hi_value is None or pd.isna(hi_value) or hi_value < YELLOW_MIN:
+        return "#ffffff"
+    if hi_value < ORANGE_MIN:
+        return "#fff59d"
+    if hi_value < RED_MIN:
+        return "#ffcc80"
+    if hi_value < PURPLE_MIN:
+        return "#d32f2f"
+    return "#7b1fa2"
+
+def build_history_chart(hist_df, column_name):
+    plot_df = history_chart_series(hist_df, column_name)
+    if plot_df.empty:
+        return None
+
+    x = plot_df["x"].to_numpy()
+    y = plot_df["y"].to_numpy()
+
+    y_floor = float(plot_df["y_min"].iloc[0])
+    y_ceiling = max(y.max() + 5, y_floor + 10)
+    y_ticks = list(range(int(y_floor), int(y_ceiling) + 1, 10))
+
+    fig, ax = plt.subplots(figsize=(6.2, 3.2))
+
+    if column_name in ["Heat Index (F)", "Heat Index Band"]:
+        if len(plot_df) >= 2:
+            points = list(zip(x, y))
+            segments = [[points[i], points[i + 1]] for i in range(len(points) - 1)]
+            segment_colors = [hi_segment_color(y[i + 1]) for i in range(len(y) - 1)]
+            lc = LineCollection(segments, colors=segment_colors, linewidths=2.5)
+            ax.add_collection(lc)
+
+        point_colors = [hi_segment_color(v) for v in y]
+        ax.scatter(x, y, c=point_colors, s=36, zorder=3)
+    else:
+        line_color = solid_line_color(column_name)
+        ax.plot(x, y, linewidth=2.5, marker="o", markersize=5, color=line_color)
+
+    ax.set_xlim(-0.2, len(x) - 0.8 if len(x) > 1 else 0.8)
+    ax.set_ylim(y_floor, y_ceiling)
+    ax.set_xticks(x)
+    ax.set_xticklabels(plot_df["x_label"].tolist(), rotation=0)
+    ax.set_yticks(y_ticks)
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    fig.tight_layout()
+    return fig
     
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
@@ -328,7 +427,7 @@ def render_history_panel(selection, group_df):
                         }, na_rep=""),
                         width=950,
                         hide_index=True
-)
+                    )
             return
 
         if col_name not in display_columns:
@@ -339,18 +438,26 @@ def render_history_panel(selection, group_df):
             if hist_df.empty:
                 st.info("No historical data returned for the past hour.")
             else:
-                st.dataframe(
-                    style_table(hist_df).format({
-                        "Temp (F)": "{:.1f}",
-                        "Dew Point (F)": "{:.1f}",
-                        "RH (%)": "{:.1f}",
-                        "Wind Speed (mph)": "{:.1f}",
-                        "Wind Gust (mph)": "{:.1f}",
-                        "Heat Index (F)": "{:.1f}",
-                    }, na_rep=""),
-                    width=950,
-                    hide_index=True
-                )
+                left_col, right_col = st.columns([1.2, 1.8], vertical_alignment="top")
+
+                with left_col:
+                    fig = build_history_chart(hist_df, col_name)
+                    if fig is not None:
+                        st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+                with right_col:
+                    st.dataframe(
+                        style_table(hist_df).format({
+                            "Temp (F)": "{:.1f}",
+                            "Dew Point (F)": "{:.1f}",
+                            "RH (%)": "{:.1f}",
+                            "Wind Speed (mph)": "{:.1f}",
+                            "Wind Gust (mph)": "{:.1f}",
+                            "Heat Index (F)": "{:.1f}",
+                        }, na_rep=""),
+                        width=950,
+                        hide_index=True
+                    )
                 
 def get_current_conditions(location_key):
     url = f"{BASE_URL}/currentconditions/v1/{location_key}"
@@ -499,9 +606,9 @@ def fetch_all_data():
 
 def style_table(df):
     def apply_row_style(row):
-        hi = row["Heat Index (F)"]
-        age_min = row["Observation Age (min)"]
-        is_stale = age_min is not None and age_min > STALE_MINUTES
+        hi = row.get("Heat Index (F)", None)
+        age_min = row.get("Observation Age (min)", None)
+        is_stale = age_min is not None and pd.notna(age_min) and age_min > STALE_MINUTES
 
         bg = row_background_css(hi)
         stale_css = stale_text_css(is_stale, hi)
