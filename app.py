@@ -182,7 +182,7 @@ def render_history_panel(selection, group_df):
             if hist_df.empty:
                 st.info("No historical data returned for the past hour.")
             else:
-                st.dataframe(hist_df, width="content", hide_index=True)
+                st.dataframe(hist_df, width=950, hide_index=True)
         return
 
     if selected_cells:
