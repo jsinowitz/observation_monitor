@@ -23,6 +23,22 @@ st.set_page_config(page_title="Disney Heat Index Dashboard", layout="wide")
 SUPABASE_URL = st.secrets["SUPABASE_URL"].strip()
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"].strip()
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+try:
+    sanity = (
+        supabase.table("observations")
+        .select("site_name, inserted_at")
+        .eq("site_name", "Magic Kingdom")
+        .order("inserted_at", desc=True)
+        .limit(5)
+        .execute()
+    )
+    st.write("SUPABASE SANITY:", sanity.data)
+except Exception as e:
+    st.error(f"Supabase sanity query failed: {e}")
+
+
+
 BASE_URL = "http://apidev.accuweather.com"
 API_KEY = st.secrets["ACCUWEATHER_API_KEY"]
 CENTRAL_TZ = ZoneInfo("America/Chicago")
@@ -92,10 +108,7 @@ def history_all_variables_df(site_name, location_key):
 
     result = (
         supabase.table("observations")
-        .select(
-            "site_name, inserted_at, temp_f, dewpoint_f, rh, "
-            "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f"
-        )
+        .select("site_name, inserted_at, temp_f, dewpoint_f, rh, wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f")
         .eq("site_name", site_name)
         .gte("inserted_at", cutoff)
         .order("inserted_at")
@@ -103,7 +116,7 @@ def history_all_variables_df(site_name, location_key):
     )
 
     rows = result.data or []
-    st.write(rows[:5])
+
     return pd.DataFrame([
         {
             "Site": r["site_name"],
