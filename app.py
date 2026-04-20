@@ -104,87 +104,11 @@ def history_all_variables_df(site_name, location_key):
             "Wind Gust (mph)": r["wind_gust_mph"],
             "Wind Dir": r["wind_dir"],
             "Heat Index (F)": r["heat_index_f"],
-            "Heat Index Band": heat_index_band(r["heat_index_f"]),  # 👈 ADD THIS
+            "Heat Index Band": heat_index_band(r["heat_index_f"]) if r["heat_index_f"] is not None else "None",
         }
         for r in rows
     ])
 
-def history_single_variable_df(site_name, location_key, column_name):
-    column_map = {
-        "Temp (F)": "temp_f",
-        "Dew Point (F)": "dewpoint_f",
-        "RH (%)": "rh",
-        "Wind Speed (mph)": "wind_speed_mph",
-        "Wind Gust (mph)": "wind_gust_mph",
-        "Wind Dir": "wind_dir",
-        "Heat Index (F)": "heat_index_f",
-    }
-
-    is_band = column_name == "Heat Index Band"
-
-    if column_name not in column_map and not is_band:
-        return pd.DataFrame()
-
-    latest_result = (
-        supabase.table("observations")
-        .select("inserted_at")
-        .eq("site_name", site_name)
-        .order("inserted_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-
-    latest_rows = latest_result.data or []
-    if not latest_rows:
-        return pd.DataFrame()
-
-    latest_inserted = datetime.fromisoformat(
-        latest_rows[0]["inserted_at"].replace("Z", "+00:00")
-    )
-    cutoff = (latest_inserted - timedelta(hours=1)).isoformat()
-
-    if is_band:
-        result = (
-            supabase.table("observations")
-            .select("site_name, inserted_at, heat_index_f")
-            .eq("site_name", site_name)
-            .gte("inserted_at", cutoff)
-            .order("inserted_at")
-            .execute()
-        )
-
-        rows = result.data or []
-
-        return pd.DataFrame([
-            {
-                "Site": r["site_name"],
-                "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
-                "Heat Index Band": heat_index_band(r["heat_index_f"]),
-            }
-            for r in rows
-        ])
-
-    db_col = column_map[column_name]
-
-    result = (
-        supabase.table("observations")
-        .select(f"site_name, inserted_at, {db_col}")
-        .eq("site_name", site_name)
-        .gte("inserted_at", cutoff)
-        .order("inserted_at")
-        .execute()
-    )
-
-    rows = result.data or []
-
-    return pd.DataFrame([
-        {
-            "Site": r["site_name"],
-            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
-            column_name: r[db_col],
-        }
-        for r in rows
-    ])
 # def history_single_variable_df(site_name, location_key, column_name):
 #     column_map = {
 #         "Temp (F)": "temp_f",
@@ -197,7 +121,7 @@ def history_single_variable_df(site_name, location_key, column_name):
 #     }
 
 #     is_band = column_name == "Heat Index Band"
-    
+
 #     if column_name not in column_map and not is_band:
 #         return pd.DataFrame()
 
@@ -214,8 +138,32 @@ def history_single_variable_df(site_name, location_key, column_name):
 #     if not latest_rows:
 #         return pd.DataFrame()
 
-#     latest_inserted = datetime.fromisoformat(latest_rows[0]["inserted_at"].replace("Z", "+00:00"))
+#     latest_inserted = datetime.fromisoformat(
+#         latest_rows[0]["inserted_at"].replace("Z", "+00:00")
+#     )
 #     cutoff = (latest_inserted - timedelta(hours=1)).isoformat()
+
+#     if is_band:
+#         result = (
+#             supabase.table("observations")
+#             .select("site_name, inserted_at, heat_index_f")
+#             .eq("site_name", site_name)
+#             .gte("inserted_at", cutoff)
+#             .order("inserted_at")
+#             .execute()
+#         )
+
+#         rows = result.data or []
+
+#         return pd.DataFrame([
+#             {
+#                 "Site": r["site_name"],
+#                 "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
+#                 "Heat Index Band": heat_index_band(r["heat_index_f"]),
+#             }
+#             for r in rows
+#         ])
+
 #     db_col = column_map[column_name]
 
 #     result = (
@@ -237,6 +185,86 @@ def history_single_variable_df(site_name, location_key, column_name):
 #         }
 #         for r in rows
 #     ])
+def history_single_variable_df(site_name, location_key, column_name):
+    column_map = {
+        "Temp (F)": "temp_f",
+        "Dew Point (F)": "dewpoint_f",
+        "RH (%)": "rh",
+        "Wind Speed (mph)": "wind_speed_mph",
+        "Wind Gust (mph)": "wind_gust_mph",
+        "Wind Dir": "wind_dir",
+        "Heat Index (F)": "heat_index_f",
+    }
+
+    is_heat_index = column_name in ["Heat Index (F)", "Heat Index Band"]
+
+    if column_name not in column_map and not is_heat_index:
+        return pd.DataFrame()
+
+    # get latest timestamp
+    latest_result = (
+        supabase.table("observations")
+        .select("inserted_at")
+        .eq("site_name", site_name)
+        .order("inserted_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    latest_rows = latest_result.data or []
+    if not latest_rows:
+        return pd.DataFrame()
+
+    latest_inserted = datetime.fromisoformat(
+        latest_rows[0]["inserted_at"].replace("Z", "+00:00")
+    )
+    cutoff = (latest_inserted - timedelta(hours=1)).isoformat()
+
+    # 🔥 HEAT INDEX (COMBINED CASE)
+    if is_heat_index:
+        result = (
+            supabase.table("observations")
+            .select("site_name, inserted_at, heat_index_f")
+            .eq("site_name", site_name)
+            .gte("inserted_at", cutoff)
+            .order("inserted_at")
+            .execute()
+        )
+
+        rows = result.data or []
+
+        return pd.DataFrame([
+            {
+                "Site": r["site_name"],
+                "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
+                "Heat Index (F)": r["heat_index_f"],
+                "Heat Index Band": heat_index_band(r["heat_index_f"]),
+            }
+            for r in rows
+        ])
+
+    # 🔹 NORMAL VARIABLE CASE
+    db_col = column_map[column_name]
+
+    result = (
+        supabase.table("observations")
+        .select(f"site_name, inserted_at, {db_col}")
+        .eq("site_name", site_name)
+        .gte("inserted_at", cutoff)
+        .order("inserted_at")
+        .execute()
+    )
+
+    rows = result.data or []
+
+    return pd.DataFrame([
+        {
+            "Site": r["site_name"],
+            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
+            column_name: r[db_col],
+        }
+        for r in rows
+    ])
     
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
@@ -289,7 +317,18 @@ def render_history_panel(selection, group_df):
                 if hist_df.empty:
                     st.info("No historical data returned for the past hour.")
                 else:
-                    st.dataframe(hist_df, width="content", hide_index=True)
+                    st.dataframe(
+                        style_table(hist_df).format({
+                            "Temp (F)": "{:.1f}",
+                            "Dew Point (F)": "{:.1f}",
+                            "RH (%)": "{:.1f}",
+                            "Wind Speed (mph)": "{:.1f}",
+                            "Wind Gust (mph)": "{:.1f}",
+                            "Heat Index (F)": "{:.1f}",
+                        }, na_rep=""),
+                        width=950,
+                        hide_index=True
+)
             return
 
         if col_name not in display_columns:
@@ -300,7 +339,18 @@ def render_history_panel(selection, group_df):
             if hist_df.empty:
                 st.info("No historical data returned for the past hour.")
             else:
-                st.dataframe(hist_df, width="content", hide_index=True)
+                st.dataframe(
+                    style_table(hist_df).format({
+                        "Temp (F)": "{:.1f}",
+                        "Dew Point (F)": "{:.1f}",
+                        "RH (%)": "{:.1f}",
+                        "Wind Speed (mph)": "{:.1f}",
+                        "Wind Gust (mph)": "{:.1f}",
+                        "Heat Index (F)": "{:.1f}",
+                    }, na_rep=""),
+                    width=950,
+                    hide_index=True
+                )
                 
 def get_current_conditions(location_key):
     url = f"{BASE_URL}/currentconditions/v1/{location_key}"
