@@ -147,7 +147,6 @@ def history_single_variable_df(site_name, location_key, column_name):
     )
     cutoff = (latest_inserted - timedelta(hours=1)).isoformat()
 
-    # 🔥 HEAT INDEX (COMBINED CASE)
     if is_heat_index:
         result = (
             supabase.table("observations")
@@ -444,81 +443,21 @@ def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
         return
 
-    selected_rows = selection["selection"].get("rows", [])
     selected_cells = selection["selection"].get("cells", [])
+    if not selected_cells:
+        return
 
     table_df = group_df.reset_index(drop=True)
 
-    if selected_cells:
-        row_idx, col_name = selected_cells[0]
+    row_idx, col_name = selected_cells[0]
 
-        if row_idx >= len(table_df):
-            return
-
-        site_name = table_df.loc[row_idx, "Site"]
-        location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
-
-        # Site cell = full table
-        if col_name == "Site":
-            with st.expander(f"Last hour for {site_name}", expanded=True):
-                hist_df = history_all_variables_df(site_name, location_key)
-                if hist_df.empty:
-                    st.info("No historical data returned for the past hour.")
-                else:
-                    st.dataframe(
-                        style_table(hist_df).format({
-                            "Temp (F)": "{:.1f}",
-                            "Dew Point (F)": "{:.1f}",
-                            "RH (%)": "{:.1f}",
-                            "Wind Speed (mph)": "{:.1f}",
-                            "Wind Gust (mph)": "{:.1f}",
-                            "Heat Index (F)": "{:.1f}",
-                        }, na_rep=""),
-                        width=950,
-                        hide_index=True
-                    )
-            return
-
-        # Ignore these columns entirely
-        if col_name not in display_columns or col_name in ["Observation Time (CT)", "Observation Age (min)"]:
-            return
-
-        with st.expander(f"Last hour for {site_name} — {col_name}", expanded=True):
-            hist_df = history_single_variable_df(site_name, location_key, col_name)
-
-            if hist_df.empty:
-                st.info("No historical data returned for the past hour.")
-            else:
-                left_col, right_col = st.columns([1.8, 1.2], vertical_alignment="top")
-
-                with left_col:
-                    st.dataframe(
-                        style_table(hist_df).format({
-                            "Temp (F)": "{:.1f}",
-                            "Dew Point (F)": "{:.1f}",
-                            "RH (%)": "{:.1f}",
-                            "Wind Speed (mph)": "{:.1f}",
-                            "Wind Gust (mph)": "{:.1f}",
-                            "Heat Index (F)": "{:.1f}",
-                        }, na_rep=""),
-                        width=950,
-                        hide_index=True
-                    )
-
-                with right_col:
-                    fig = build_history_chart(hist_df, col_name)
-                    if fig is not None:
-                        st.plotly_chart(fig, width="stretch")
+    if row_idx >= len(table_df):
         return
 
-    if selected_rows:
-        row_idx = selected_rows[0]
-        if row_idx >= len(table_df):
-            return
+    site_name = table_df.loc[row_idx, "Site"]
+    location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
 
-        site_name = table_df.loc[row_idx, "Site"]
-        location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
-
+    if col_name == "Site":
         with st.expander(f"Last hour for {site_name}", expanded=True):
             hist_df = history_all_variables_df(site_name, location_key)
             if hist_df.empty:
@@ -536,6 +475,37 @@ def render_history_panel(selection, group_df):
                     width=950,
                     hide_index=True
                 )
+        return
+
+    if col_name not in display_columns or col_name in ["Observation Time (CT)", "Observation Age (min)"]:
+        return
+
+    with st.expander(f"Last hour for {site_name} — {col_name}", expanded=True):
+        hist_df = history_single_variable_df(site_name, location_key, col_name)
+
+        if hist_df.empty:
+            st.info("No historical data returned for the past hour.")
+        else:
+            left_col, right_col = st.columns([1.8, 1.2], vertical_alignment="top")
+
+            with left_col:
+                st.dataframe(
+                    style_table(hist_df).format({
+                        "Temp (F)": "{:.1f}",
+                        "Dew Point (F)": "{:.1f}",
+                        "RH (%)": "{:.1f}",
+                        "Wind Speed (mph)": "{:.1f}",
+                        "Wind Gust (mph)": "{:.1f}",
+                        "Heat Index (F)": "{:.1f}",
+                    }, na_rep=""),
+                    width=950,
+                    hide_index=True
+                )
+
+            with right_col:
+                fig = build_history_chart(hist_df, col_name)
+                if fig is not None:
+                    st.plotly_chart(fig, width="stretch")
                     
 def get_current_conditions(location_key):
     url = f"{BASE_URL}/currentconditions/v1/{location_key}"
@@ -786,7 +756,7 @@ for group_name in LOCATION_GROUPS.keys():
         hide_index=True,
         key=f"table_{group_name}",
         on_select="rerun",
-        selection_mode=["single-row", "single-cell"]
+        selection_mode="single-cell"
     )
 
     render_history_panel(event, group_df)
