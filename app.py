@@ -5,43 +5,16 @@ import pandas as pd
 import requests
 import streamlit as st
 from supabase import create_client
-#test comment
-TEST_COLOR_MODE = False
 
-if TEST_COLOR_MODE:
-    YELLOW_MIN = 72
-    ORANGE_MIN = 73
-    RED_MIN = 74
-    PURPLE_MIN = 75
-else:
-    YELLOW_MIN = 90
-    ORANGE_MIN = 95
-    RED_MIN = 100
-    PURPLE_MIN = 105
-    
+YELLOW_MIN = 90
+ORANGE_MIN = 95
+RED_MIN = 100
+PURPLE_MIN = 105
+
 st.set_page_config(page_title="Disney Heat Index Dashboard", layout="wide")
 SUPABASE_URL = st.secrets["SUPABASE_URL"].strip()
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"].strip()
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-st.write("SUPABASE URL:", SUPABASE_URL)
-st.write("SUPABASE KEY PREFIX:", SUPABASE_KEY[:12])
-
-st.error("SUPABASE DEBUG MARKER")
-try:
-    sanity = (
-        supabase.table("observations")
-        .select("site_name, inserted_at")
-        .eq("site_name", "Magic Kingdom")
-        .order("inserted_at", desc=True)
-        .limit(5)
-        .execute()
-    )
-    st.write("SUPABASE SANITY:", sanity.data)
-except Exception as e:
-    st.error(f"Supabase sanity query failed: {e}")
-
-
 BASE_URL = "http://apidev.accuweather.com"
 API_KEY = st.secrets["ACCUWEATHER_API_KEY"]
 CENTRAL_TZ = ZoneInfo("America/Chicago")
@@ -285,13 +258,13 @@ def heat_index_f(temp_f, rh):
     return round1(hi)
 
 def heat_index_band(hi):
-    if hi is None or hi < 90:
+    if hi is None or hi < YELLOW_MIN:
         return "None"
-    if hi < 95:
+    if hi < ORANGE_MIN:
         return "Yellow"
-    if hi < 100:
+    if hi < RED_MIN:
         return "Orange"
-    if hi < 105:
+    if hi < PURPLE_MIN:
         return "Red"
     return "Purple"
 
@@ -334,7 +307,7 @@ def obs_age_minutes(obs_time):
 def stale_text_css(is_stale, hi):
     if not is_stale:
         return ""
-    if hi is not None and hi >= 100:
+    if hi is not None and hi >= RED_MIN:
         return "color: yellow; font-weight: 700;"
     return "color: red; font-weight: 700;"
     
