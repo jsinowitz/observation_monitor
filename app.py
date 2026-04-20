@@ -76,9 +76,9 @@ def format_obs_time_ct_short(obs_time):
 def history_all_variables_df(site_name, location_key):
     latest_result = (
         supabase.table("observations")
-        .select("obs_time_utc")
-        .eq("location_key", location_key)
-        .order("obs_time_utc", desc=True)
+        .select("inserted_at")
+        .eq("site_name", site_name)
+        .order("inserted_at", desc=True)
         .limit(1)
         .execute()
     )
@@ -87,18 +87,18 @@ def history_all_variables_df(site_name, location_key):
     if not latest_rows:
         return pd.DataFrame()
 
-    latest_obs = datetime.fromisoformat(latest_rows[0]["obs_time_utc"].replace("Z", "+00:00"))
-    cutoff = (latest_obs - timedelta(hours=1)).isoformat()
+    latest_inserted = datetime.fromisoformat(latest_rows[0]["inserted_at"].replace("Z", "+00:00"))
+    cutoff = (latest_inserted - timedelta(hours=1)).isoformat()
 
     result = (
         supabase.table("observations")
         .select(
-            "site_name, obs_time_ct, obs_time_utc, temp_f, dewpoint_f, rh, "
-            "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f, location_key"
+            "site_name, inserted_at, temp_f, dewpoint_f, rh, "
+            "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f"
         )
-        .eq("location_key", location_key)
-        .gte("obs_time_utc", cutoff)
-        .order("obs_time_utc")
+        .eq("site_name", site_name)
+        .gte("inserted_at", cutoff)
+        .order("inserted_at")
         .execute()
     )
 
@@ -107,7 +107,7 @@ def history_all_variables_df(site_name, location_key):
     return pd.DataFrame([
         {
             "Site": r["site_name"],
-            "Observation Time (CT)": r["obs_time_ct"],
+            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
             "Temp (F)": r["temp_f"],
             "Dew Point (F)": r["dewpoint_f"],
             "RH (%)": r["rh"],
@@ -118,6 +118,8 @@ def history_all_variables_df(site_name, location_key):
         }
         for r in rows
     ])
+
+
 def history_single_variable_df(site_name, location_key, column_name):
     column_map = {
         "Temp (F)": "temp_f",
@@ -134,9 +136,9 @@ def history_single_variable_df(site_name, location_key, column_name):
 
     latest_result = (
         supabase.table("observations")
-        .select("obs_time_utc")
-        .eq("location_key", location_key)
-        .order("obs_time_utc", desc=True)
+        .select("inserted_at")
+        .eq("site_name", site_name)
+        .order("inserted_at", desc=True)
         .limit(1)
         .execute()
     )
@@ -145,16 +147,16 @@ def history_single_variable_df(site_name, location_key, column_name):
     if not latest_rows:
         return pd.DataFrame()
 
-    latest_obs = datetime.fromisoformat(latest_rows[0]["obs_time_utc"].replace("Z", "+00:00"))
-    cutoff = (latest_obs - timedelta(hours=1)).isoformat()
+    latest_inserted = datetime.fromisoformat(latest_rows[0]["inserted_at"].replace("Z", "+00:00"))
+    cutoff = (latest_inserted - timedelta(hours=1)).isoformat()
     db_col = column_map[column_name]
 
     result = (
         supabase.table("observations")
-        .select(f"site_name, obs_time_ct, {db_col}, obs_time_utc")
-        .eq("location_key", location_key)
-        .gte("obs_time_utc", cutoff)
-        .order("obs_time_utc")
+        .select(f"site_name, inserted_at, {db_col}")
+        .eq("site_name", site_name)
+        .gte("inserted_at", cutoff)
+        .order("inserted_at")
         .execute()
     )
 
@@ -163,7 +165,7 @@ def history_single_variable_df(site_name, location_key, column_name):
     return pd.DataFrame([
         {
             "Site": r["site_name"],
-            "Observation Time (CT)": r["obs_time_ct"],
+            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
             column_name: r[db_col],
         }
         for r in rows
