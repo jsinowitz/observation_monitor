@@ -104,6 +104,7 @@ def history_all_variables_df(site_name, location_key):
             "Wind Gust (mph)": r["wind_gust_mph"],
             "Wind Dir": r["wind_dir"],
             "Heat Index (F)": r["heat_index_f"],
+            "Heat Index Band": heat_index_band(r["heat_index_f"]),  # 👈 ADD THIS
         }
         for r in rows
     ])
@@ -182,7 +183,18 @@ def render_history_panel(selection, group_df):
             if hist_df.empty:
                 st.info("No historical data returned for the past hour.")
             else:
-                st.dataframe(hist_df, width=950, hide_index=True)
+                st.dataframe(
+                    style_table(hist_df).format({
+                        "Temp (F)": "{:.1f}",
+                        "Dew Point (F)": "{:.1f}",
+                        "RH (%)": "{:.1f}",
+                        "Wind Speed (mph)": "{:.1f}",
+                        "Wind Gust (mph)": "{:.1f}",
+                        "Heat Index (F)": "{:.1f}",
+                    }, na_rep=""),
+                    width=900,
+                    hide_index=True
+                )
         return
 
     if selected_cells:
