@@ -905,8 +905,6 @@ import pandas as pd
 import requests
 import streamlit as st
 from supabase import create_client
-import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 import streamlit.components.v1 as components
@@ -957,6 +955,10 @@ LOCATION_GROUPS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
 def safe_get(d, *keys):
     cur = d
     for k in keys:
@@ -964,6 +966,18 @@ def safe_get(d, *keys):
             return None
         cur = cur.get(k)
     return cur
+
+
+def round1(value):
+    if value is None:
+        return None
+    try:
+        v = float(value)
+        if pd.isna(v):
+            return None
+        return round(v, 1)
+    except (TypeError, ValueError):
+        return None
 
 
 def format_obs_time_ct_short(obs_time):
@@ -981,12 +995,174 @@ def format_obs_time_ct_short(obs_time):
         return obs_time
 
 
+def parse_obs_time_ct(obs_time):
+    if not obs_time:
+        return ""
+    try:
+        dt = datetime.fromisoformat(obs_time)
+        dt_ct = dt.astimezone(CENTRAL_TZ)
+        month = dt_ct.month
+        day = dt_ct.day
+        hour12 = dt_ct.strftime("%I").lstrip("0") or "0"
+        minute = dt_ct.strftime("%M")
+        ampm = dt_ct.strftime("%p").lower()
+        return f"{month}/{day} {hour12}:{minute}{ampm}"
+    except Exception:
+        return obs_time
+
+
+def obs_age_minutes(obs_time):
+    if not obs_time:
+        return None
+    try:
+        dt = datetime.fromisoformat(obs_time)
+        now_utc = datetime.now(timezone.utc)
+        return int(round((now_utc - dt.astimezone(timezone.utc)).total_seconds() / 60.0))
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Heat index calculation & banding
+# ---------------------------------------------------------------------------
+
+def heat_index_f(temp_f, rh):
+    if temp_f is None or rh is None:
+        return None
+    if temp_f < 80 or rh < 40:
+        return round1(temp_f)
+
+    hi = (
+        -42.379
+        + 2.04901523 * temp_f
+        + 10.14333127 * rh
+        - 0.22475541 * temp_f * rh
+        - 0.00683783 * temp_f * temp_f
+        - 0.05481717 * rh * rh
+        + 0.00122874 * temp_f * temp_f * rh
+        + 0.00085282 * temp_f * rh * rh
+        - 0.00000199 * temp_f * temp_f * rh * rh
+    )
+
+    if rh < 13 and 80 <= temp_f <= 112:
+        adjustment = ((13 - rh) / 4) * math.sqrt((17 - abs(temp_f - 95)) / 17)
+        hi -= adjustment
+    elif rh > 85 and 80 <= temp_f <= 87:
+        adjustment = ((rh - 85) / 10) * ((87 - temp_f) / 5)
+        hi += adjustment
+
+    return round1(hi)
+
+
+def heat_index_band(hi):
+    if hi is None:
+        return "None"
+    try:
+        hi = float(hi)
+    except (TypeError, ValueError):
+        return "None"
+    if pd.isna(hi) or hi < YELLOW_MIN:
+        return "None"
+    if hi < ORANGE_MIN:
+        return "Yellow"
+    if hi < RED_MIN:
+        return "Orange"
+    if hi < PURPLE_MIN:
+        return "Red"
+    return "Purple"
+
+
+def _safe_hi_value(hi):
+    """Return a float heat index or None — handles every null/NaN variant."""
+    if hi is None:
+        return None
+    try:
+        v = float(hi)
+        if pd.isna(v):
+            return None
+        return v
+    except (TypeError, ValueError):
+        return None
+
+
+def get_row_color(hi):
+    v = _safe_hi_value(hi)
+    if v is None or v < YELLOW_MIN:
+        return ""
+    if v < ORANGE_MIN:
+        return "#fff59d"
+    if v < RED_MIN:
+        return "#ffcc80"
+    if v < PURPLE_MIN:
+        return "#d32f2f"
+    return "#7b1fa2"
+
+
+def row_background_css(hi):
+    if hi is None or hi < YELLOW_MIN:
+        return ""
+    if hi < ORANGE_MIN:
+        return "background-color: #fff59d; color: black;"
+    if hi < RED_MIN:
+        return "background-color: #ffcc80; color: black;"
+    if hi < PURPLE_MIN:
+        return "background-color: #d32f2f; color: white;"
+    return "background-color: #7b1fa2; color: white;"
+
+
+def stale_text_css(is_stale, hi):
+    if not is_stale:
+        return ""
+    if hi is not None and hi >= RED_MIN:
+        return "color: yellow; font-weight: 700;"
+    return "color: red; font-weight: 700;"
+
+
+def get_text_color(bg_color):
+    if not bg_color:
+        return "color: inherit;"
+    if bg_color in ["#fff59d", "#ffcc80"]:
+        return "black"
+    return "white"
+
+
+# ---------------------------------------------------------------------------
+# Shared styling helpers — used everywhere dataframes are styled
+# ---------------------------------------------------------------------------
+
+def color_rows(row):
+    """Apply background color based on Heat Index (F) if the column exists."""
+    if "Heat Index (F)" in row.index:
+        color = get_row_color(row["Heat Index (F)"])
+    else:
+        color = ""
+    if color:
+        return [f"background-color: {color}; color: black;" for _ in row]
+    else:
+        return ["" for _ in row]
+
+
+def build_format_dict(columns):
+    """Build .format() dict only for numeric columns present in the dataframe."""
+    fmt = {}
+    for col in ["Temp (F)", "Dew Point (F)", "RH (%)", "Wind Speed (mph)",
+                 "Wind Gust (mph)", "Heat Index (F)"]:
+        if col in columns:
+            fmt[col] = "{:.1f}"
+    return fmt
+
+
+# ---------------------------------------------------------------------------
+# History helpers — single site drill-down
+# ---------------------------------------------------------------------------
+
 def history_all_variables_df(site_name, location_key):
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
 
     result = (
         supabase.table("observations")
-        .select("site_name, inserted_at, obs_time_utc, temp_f, dewpoint_f, rh, wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f")
+        .select("site_name, inserted_at, obs_time_utc, temp_f, dewpoint_f, rh, "
+                "wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f")
         .eq("site_name", site_name)
         .gte("inserted_at", cutoff)
         .order("inserted_at", desc=True)
@@ -1025,7 +1201,6 @@ def history_single_variable_df(site_name, location_key, column_name):
     }
 
     is_heat_index = column_name in ["Heat Index (F)", "Heat Index Band"]
-
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
 
     if is_heat_index:
@@ -1038,9 +1213,7 @@ def history_single_variable_df(site_name, location_key, column_name):
             .limit(15)
             .execute()
         )
-
         rows = result.data or []
-
         return pd.DataFrame([
             {
                 "Site": r["site_name"],
@@ -1051,7 +1224,9 @@ def history_single_variable_df(site_name, location_key, column_name):
             for r in rows
         ])
 
-    db_col = column_map[column_name]
+    db_col = column_map.get(column_name)
+    if db_col is None:
+        return pd.DataFrame()
 
     result = (
         supabase.table("observations")
@@ -1062,7 +1237,6 @@ def history_single_variable_df(site_name, location_key, column_name):
         .limit(15)
         .execute()
     )
-
     rows = result.data or []
 
     return pd.DataFrame([
@@ -1075,12 +1249,17 @@ def history_single_variable_df(site_name, location_key, column_name):
     ])
 
 
+# ---------------------------------------------------------------------------
+# Chart helpers
+# ---------------------------------------------------------------------------
+
 def history_chart_series(hist_df, column_name):
     if hist_df.empty:
         return pd.DataFrame()
 
     df = hist_df.copy()
-    df["dt"] = pd.to_datetime(df["Observation Time (CT)"], format="%m/%d %I:%M%p", errors="coerce")
+    df["dt"] = pd.to_datetime(df["Observation Time (CT)"],
+                               format="%m/%d %I:%M%p", errors="coerce")
 
     if df["dt"].isna().all():
         df["x_label"] = df["Observation Time (CT)"].astype(str)
@@ -1139,10 +1318,8 @@ def solid_line_color(column_name):
 
 def hi_segment_color(hi_value):
     dark = is_dark_theme()
-
     if hi_value is None or pd.isna(hi_value) or hi_value < YELLOW_MIN:
         return "#ffffff" if dark else "#000000"
-
     if hi_value < ORANGE_MIN:
         return "#fff59d"
     if hi_value < RED_MIN:
@@ -1162,7 +1339,6 @@ def build_history_chart(hist_df, column_name):
 
     is_hi = column_name in ["Heat Index (F)", "Heat Index Band"]
 
-    # --- Units + floor ---
     if column_name in ["Temp (F)", "Dew Point (F)", "Heat Index (F)", "Heat Index Band"]:
         unit = "°F"
         y_floor = 70 if is_hi else (60 if column_name == "Temp (F)" else 50)
@@ -1177,7 +1353,6 @@ def build_history_chart(hist_df, column_name):
 
     fig = go.Figure()
 
-    # --- Heat Index segmented lines ---
     if is_hi:
         for i in range(len(y) - 1):
             fig.add_trace(go.Scatter(
@@ -1187,27 +1362,21 @@ def build_history_chart(hist_df, column_name):
                 line=dict(color=hi_segment_color(y[i + 1]), width=3),
                 hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>",
             ))
-
-        # markers layer
         fig.add_trace(go.Scatter(
-            x=x,
-            y=y,
+            x=x, y=y,
             mode="markers",
             marker=dict(color=[hi_segment_color(v) for v in y], size=6),
             hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>",
         ))
-
     else:
         fig.add_trace(go.Scatter(
-            x=x,
-            y=y,
+            x=x, y=y,
             mode="lines+markers",
             line=dict(color=solid_line_color(column_name), width=3),
             marker=dict(size=6),
             hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>",
         ))
 
-    # --- Title ---
     if is_hi:
         title = "Heat Index Over the Last Hour"
     elif column_name == "Temp (F)":
@@ -1226,102 +1395,38 @@ def build_history_chart(hist_df, column_name):
     if len(y) > 0:
         latest_x = x[-1]
         latest_y = y[-1]
-
         if is_hi:
             label_color = hi_segment_color(latest_y)
         else:
             label_color = solid_line_color(column_name)
-
         label_text = f"{latest_y:.1f}{unit}"
-
         fig.add_annotation(
-            x=latest_x,
-            y=latest_y,
+            x=latest_x, y=latest_y,
             text=label_text,
             showarrow=False,
-            xshift=40,
-            yshift=-10,
+            xshift=40, yshift=-10,
             font=dict(size=12, color=label_color),
             bgcolor="rgba(0,0,0,0)",
             bordercolor=label_color,
-            borderwidth=1,
-            borderpad=7,
+            borderwidth=1, borderpad=7,
         )
 
-    # --- Layout ---
     fig.update_layout(
-        title=dict(
-            text=title,
-            x=0.5,
-            xanchor="center",
-            font=dict(size=14),
-        ),
+        title=dict(text=title, x=0.5, xanchor="center", font=dict(size=14)),
         height=260,
         margin=dict(l=20, r=20, t=30, b=20),
-        xaxis=dict(
-            tickmode="array",
-            tickvals=x,
-            ticktext=x,
-        ),
-        yaxis=dict(
-            range=[y_floor, y_ceiling],
-            dtick=10,
-        ),
+        xaxis=dict(tickmode="array", tickvals=x, ticktext=x),
+        yaxis=dict(range=[y_floor, y_ceiling], dtick=10),
         showlegend=False,
-        transition=dict(
-            duration=600,
-            easing="cubic-in-out",
-        ),
+        transition=dict(duration=600, easing="cubic-in-out"),
     )
-
     fig.update_traces(connectgaps=True)
-
     return fig
 
 
-def get_text_color(bg_color):
-    if not bg_color:
-        return "color: inherit;"
-
-    if bg_color in ["#fff59d", "#ffcc80"]:
-        return "black"
-
-    return "white"
-
-
-def get_row_color(hi):
-    if hi is None or pd.isna(hi) or hi < YELLOW_MIN:
-        return ""
-    if hi < ORANGE_MIN:
-        return "#fff59d"
-    if hi < RED_MIN:
-        return "#ffcc80"
-    if hi < PURPLE_MIN:
-        return "#d32f2f"
-    return "#7b1fa2"
-
-
-def color_rows(row):
-    """Safe row-coloring that only applies when Heat Index (F) column exists."""
-    if "Heat Index (F)" in row.index:
-        color = get_row_color(row["Heat Index (F)"])
-    else:
-        color = ""
-    return [
-        f"background-color: {color}; color: black;" if color else ""
-        for _ in row
-    ]
-
-
-def build_format_dict(columns):
-    """Build a .format() dict only for numeric columns that exist in the dataframe."""
-    fmt = {}
-    for col in ["Temp (F)", "Dew Point (F)", "RH (%)", "Wind Speed (mph)",
-                 "Wind Gust (mph)", "Heat Index (F)"]:
-        if col in columns:
-            fmt[col] = "{:.1f}"
-    return fmt
-
+# ---------------------------------------------------------------------------
+# History panel renderer
+# ---------------------------------------------------------------------------
 
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
@@ -1334,37 +1439,37 @@ def render_history_panel(selection, group_df):
     table_df = group_df.reset_index(drop=True)
 
     row_idx, col_name = selected_cells[0]
-    st.session_state.selected_site = table_df.loc[row_idx, "Site"]
-    st.session_state.selected_column = col_name
     if row_idx >= len(table_df):
         return
+
+    st.session_state.selected_site = table_df.loc[row_idx, "Site"]
+    st.session_state.selected_column = col_name
 
     site_name = table_df.loc[row_idx, "Site"]
     location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
 
+    # --- Clicked the Site name → show all variables ---
     if col_name == "Site":
         with st.expander(f"Last hour for {site_name}", expanded=True):
             hist_df = history_all_variables_df(site_name, location_key)
             if hist_df.empty:
                 st.info("No historical data returned for the past hour.")
             else:
-                styled_hist = hist_df.copy()
                 styled_hist = (
-                    styled_hist.style
+                    hist_df.style
                     .apply(color_rows, axis=1)
                     .format(build_format_dict(hist_df.columns), na_rep="")
                 )
-
-                st.dataframe(
-                    styled_hist,
-                    width=950,
-                    hide_index=True,
-                )
+                st.dataframe(styled_hist, width=950, hide_index=True)
         return
 
-    if col_name not in display_columns or col_name in ["Observation Time (CT)", "Observation Age (min)"]:
+    # --- Clicked a non-data column → ignore ---
+    if col_name not in display_columns or col_name in [
+        "Observation Time (CT)", "Observation Age (min)"
+    ]:
         return
 
+    # --- Clicked a specific variable → show that variable + chart ---
     with st.expander(f"Last hour for {site_name} — {col_name}", expanded=True):
         hist_df = history_single_variable_df(site_name, location_key, col_name)
 
@@ -1374,134 +1479,25 @@ def render_history_panel(selection, group_df):
             left_col, right_col = st.columns([1.8, 1.2], vertical_alignment="top")
 
             with left_col:
-                styled_hist = hist_df.copy()
                 styled_hist = (
-                    styled_hist.style
+                    hist_df.style
                     .apply(color_rows, axis=1)
                     .format(build_format_dict(hist_df.columns), na_rep="")
                 )
-
-                st.dataframe(
-                    styled_hist,
-                    width=950,
-                    hide_index=True,
-                )
+                st.dataframe(styled_hist, width=950, hide_index=True)
 
             with right_col:
                 fig = build_history_chart(hist_df, col_name)
                 if fig is not None:
                     st.plotly_chart(
-                        fig,
-                        width="stretch",
+                        fig, width="stretch",
                         key=f"chart_{site_name}_{col_name}",
                     )
 
 
-def get_current_conditions(location_key):
-    url = f"{BASE_URL}/currentconditions/v1/{location_key}"
-    params = {
-        "apikey": API_KEY,
-        "details": "true",
-    }
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()
-    payload = r.json()
-    return payload[0] if payload else None
-
-
-def round1(value):
-    if value is None or pd.isna(value):
-        return None
-    return round(float(value), 1)
-
-
-def heat_index_f(temp_f, rh):
-    if temp_f is None or rh is None:
-        return None
-
-    if temp_f < 80 or rh < 40:
-        return round1(temp_f)
-
-    hi = (
-        -42.379
-        + 2.04901523 * temp_f
-        + 10.14333127 * rh
-        - 0.22475541 * temp_f * rh
-        - 0.00683783 * temp_f * temp_f
-        - 0.05481717 * rh * rh
-        + 0.00122874 * temp_f * temp_f * rh
-        + 0.00085282 * temp_f * rh * rh
-        - 0.00000199 * temp_f * temp_f * rh * rh
-    )
-
-    if rh < 13 and 80 <= temp_f <= 112:
-        adjustment = ((13 - rh) / 4) * math.sqrt((17 - abs(temp_f - 95)) / 17)
-        hi -= adjustment
-    elif rh > 85 and 80 <= temp_f <= 87:
-        adjustment = ((rh - 85) / 10) * ((87 - temp_f) / 5)
-        hi += adjustment
-
-    return round1(hi)
-
-
-def heat_index_band(hi):
-    if hi is None or hi < YELLOW_MIN:
-        return "None"
-    if hi < ORANGE_MIN:
-        return "Yellow"
-    if hi < RED_MIN:
-        return "Orange"
-    if hi < PURPLE_MIN:
-        return "Red"
-    return "Purple"
-
-
-def row_background_css(hi):
-    if hi is None or hi < YELLOW_MIN:
-        return ""
-    if hi < ORANGE_MIN:
-        return "background-color: #fff59d; color: black;"
-    if hi < RED_MIN:
-        return "background-color: #ffcc80; color: black;"
-    if hi < PURPLE_MIN:
-        return "background-color: #d32f2f; color: white;"
-    return "background-color: #7b1fa2; color: white;"
-
-
-def parse_obs_time_ct(obs_time):
-    if not obs_time:
-        return ""
-    try:
-        dt = datetime.fromisoformat(obs_time)
-        dt_ct = dt.astimezone(CENTRAL_TZ)
-        month = dt_ct.month
-        day = dt_ct.day
-        hour12 = dt_ct.strftime("%I").lstrip("0") or "0"
-        minute = dt_ct.strftime("%M")
-        ampm = dt_ct.strftime("%p").lower()
-        return f"{month}/{day} {hour12}:{minute}{ampm}"
-    except Exception:
-        return obs_time
-
-
-def obs_age_minutes(obs_time):
-    if not obs_time:
-        return None
-    try:
-        dt = datetime.fromisoformat(obs_time)
-        now_utc = datetime.now(timezone.utc)
-        return int(round((now_utc - dt.astimezone(timezone.utc)).total_seconds() / 60.0))
-    except Exception:
-        return None
-
-
-def stale_text_css(is_stale, hi):
-    if not is_stale:
-        return ""
-    if hi is not None and hi >= RED_MIN:
-        return "color: yellow; font-weight: 700;"
-    return "color: red; font-weight: 700;"
-
+# ---------------------------------------------------------------------------
+# Data fetching
+# ---------------------------------------------------------------------------
 
 def extract_row(group_name, site_name, key, c):
     wind = c.get("Wind", {})
@@ -1534,6 +1530,12 @@ def extract_row(group_name, site_name, key, c):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_all_data():
+    """Fetch latest observation per site from Supabase.
+
+    Returns (rows, errors) where rows include all display columns.
+    Observation Age is computed fresh each rerun but is NOT part of the
+    fingerprint used for the "last updated" timer.
+    """
     result = (
         supabase.table("observations")
         .select("*")
@@ -1541,14 +1543,12 @@ def fetch_all_data():
         .execute()
     )
 
-    rows = result.data or []
+    raw_rows = result.data or []
 
-    if not rows:
-        return [], ["No Supabase data"]
+    if not raw_rows:
+        return [], []
 
-    df = pd.DataFrame(rows)
-
-    # keep only latest per site
+    df = pd.DataFrame(raw_rows)
     df = df.sort_values("inserted_at", ascending=False)
     df = df.drop_duplicates(subset=["site_name"], keep="first")
 
@@ -1561,7 +1561,9 @@ def fetch_all_data():
             "Group": r["group_name"],
             "Site": r["site_name"],
             "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
-            "Observation Age (min)": int((datetime.now(timezone.utc) - insert_time).total_seconds() / 60),
+            "Observation Age (min)": int(
+                (datetime.now(timezone.utc) - insert_time).total_seconds() / 60
+            ),
             "Temp (F)": round1(r["temp_f"]),
             "Dew Point (F)": round1(r["dewpoint_f"]),
             "RH (%)": round1(r["rh"]),
@@ -1575,11 +1577,19 @@ def fetch_all_data():
     return output, []
 
 
+def get_current_conditions(location_key):
+    url = f"{BASE_URL}/currentconditions/v1/{location_key}"
+    params = {"apikey": API_KEY, "details": "true"}
+    r = requests.get(url, params=params, timeout=30)
+    r.raise_for_status()
+    payload = r.json()
+    return payload[0] if payload else None
+
+
 def build_status_cards(df):
     max_hi = df["Heat Index (F)"].max() if not df.empty else None
 
     orlando_df = df[df["Group"] == "Walt Disney World - Orlando"]
-
     hottest_site = None
     if not orlando_df.empty and orlando_df["Heat Index (F)"].notna().any():
         max_orlando_hi = orlando_df["Heat Index (F)"].max()
@@ -1588,14 +1598,29 @@ def build_status_cards(df):
         ].iloc[0]["Site"]
 
     c1, c2 = st.columns(2)
-
     c1.metric("Max Heat Index", f"{max_hi:.1f}°F" if pd.notna(max_hi) else "N/A")
     c2.metric("Orlando Highest Site", hottest_site if hottest_site else "N/A")
 
 
-# ---------------------------------------------------------------------------
+def compute_stable_fingerprint(rows):
+    """Hash the data WITHOUT 'Observation Age (min)' so the fingerprint only
+    changes when Supabase actually returns different observation data."""
+    if not rows:
+        return ""
+    # Strip out Observation Age before hashing
+    stable = []
+    for r in rows:
+        s = {k: v for k, v in r.items() if k != "Observation Age (min)"}
+        stable.append(s)
+    stable_df = pd.DataFrame(stable)
+    return hashlib.md5(
+        stable_df.to_csv(index=False).encode("utf-8")
+    ).hexdigest()
+
+
+# ===================================================================
 # MAIN PAGE
-# ---------------------------------------------------------------------------
+# ===================================================================
 
 st.title("Disney Heat Index Dashboard")
 
@@ -1603,26 +1628,26 @@ st.title("Disney Heat Index Dashboard")
 rows, errors = fetch_all_data()
 df = pd.DataFrame(rows)
 
-# --- Compute data fingerprint and track when data actually changes ---
+# --- Fingerprint: only changes when the actual observation data changes,
+#     NOT when Observation Age recalculates on each rerun ---
 if "last_data_fingerprint" not in st.session_state:
     st.session_state.last_data_fingerprint = None
     st.session_state.last_data_changed_at = datetime.now(timezone.utc).isoformat()
 
-if not df.empty:
-    data_fingerprint = hashlib.md5(
-        pd.util.hash_pandas_object(df).values.tobytes()
-    ).hexdigest()
-else:
-    data_fingerprint = ""
+current_fingerprint = compute_stable_fingerprint(rows)
 
-if data_fingerprint != st.session_state.last_data_fingerprint:
-    st.session_state.last_data_fingerprint = data_fingerprint
+if current_fingerprint != st.session_state.last_data_fingerprint:
+    st.session_state.last_data_fingerprint = current_fingerprint
     st.session_state.last_data_changed_at = datetime.now(timezone.utc).isoformat()
 
 latest_changed = st.session_state.last_data_changed_at
 
-# --- "Last updated" live timer (only resets when data actually changes) ---
-is_dark = st.get_option("theme.base") == "dark"
+# --- "Last updated" live timer ---
+# The JS gets re-rendered every Streamlit rerun (every 30s poll), but
+# `latest_changed` only updates when the fingerprint changes, so the
+# timer jumps to the correct elapsed time immediately on re-render
+# rather than resetting to 0.
+is_dark = is_dark_theme()
 text_color = "#ffffff" if is_dark else "#000000"
 
 components.html(
@@ -1643,18 +1668,15 @@ components.html(
         function formatElapsed(seconds) {{
             const m = Math.floor(seconds / 60);
             const s = seconds % 60;
-
             if (m > 0) {{
                 return m + "m " + String(s).padStart(2,'0') + "s";
-            }} else {{
-                return s + "s";
             }}
+            return s + "s";
         }}
 
         function updateSince() {{
             const now = new Date();
-            const diff = Math.floor((now - lastUpdate) / 1000);
-
+            const diff = Math.max(0, Math.floor((now - lastUpdate) / 1000));
             const el = document.getElementById("since");
             if (el) {{
                 el.innerText = formatElapsed(diff);
@@ -1732,7 +1754,6 @@ if st.session_state.selected_site is not None:
                     "cells": [(row_idx, col_name)],
                 }
             }
-
             render_history_panel(fake_event, group_df)
             break
 
@@ -1760,4 +1781,7 @@ st.markdown(
 )
 
 now_ct = datetime.now(CENTRAL_TZ)
-st.caption(f"Last page render: {now_ct.month}/{now_ct.day} {now_ct.strftime('%I:%M%p').lstrip('0').lower()} CT")
+st.caption(
+    f"Last page render: {now_ct.month}/{now_ct.day} "
+    f"{now_ct.strftime('%I:%M%p').lstrip('0').lower()} CT"
+)
