@@ -905,7 +905,7 @@ import requests
 import streamlit as st
 from supabase import create_client
 import plotly.graph_objects as go
-from streamlit_autorefresh import st_autorefresh
+# from streamlit_autorefresh import st_autorefresh
  
 if "selected_site" not in st.session_state:
     st.session_state.selected_site = None
@@ -1597,17 +1597,15 @@ def build_status_cards(df):
     c1.metric("Max Heat Index", f"{max_hi:.1f}°F" if pd.notna(max_hi) else "N/A")
     c2.metric("Orlando Highest Site", hottest_site if hottest_site else "N/A")
  
- 
- 
-# ===================================================================
+ # ===================================================================
 # MAIN PAGE
 # ===================================================================
- 
+
 st.title("Disney Heat Index Dashboard")
- 
+
 # --- Fetch data ---
 rows, latest_inserted_at, errors = fetch_all_data()
- 
+
 # --- Compute Observation Age fresh each rerun (NOT cached) ---
 for r in rows:
     try:
@@ -1617,67 +1615,35 @@ for r in rows:
         )
     except Exception:
         r["Observation Age (min)"] = None
- 
+
 df = pd.DataFrame(rows)
- 
-# --- Timer fingerprint: use the actual max inserted_at from Supabase.
+
+# --- Timer: use the actual max inserted_at from Supabase.
 #     This only changes when the cron inserts new rows (~every 4 min). ---
 if "last_inserted_at" not in st.session_state:
     st.session_state.last_inserted_at = None
     st.session_state.last_data_changed_at = datetime.now(timezone.utc).isoformat()
- 
+
 if latest_inserted_at is not None and latest_inserted_at != st.session_state.last_inserted_at:
     st.session_state.last_inserted_at = latest_inserted_at
     st.session_state.last_data_changed_at = datetime.now(timezone.utc).isoformat()
- 
+
 latest_changed = st.session_state.last_data_changed_at
- 
-# --- "Last updated" live timer ---
-# The JS gets re-rendered every Streamlit rerun (every 30s poll), but
-# `latest_changed` only updates when the fingerprint changes, so the
-# timer jumps to the correct elapsed time immediately on re-render
-# rather than resetting to 0.
-is_dark = is_dark_theme()
-text_color = "#ffffff" if is_dark else "#000000"
- 
-st.html(
-    f"""
-    <div style="
-        font-size:16px;
-        font-weight:600;
-        color:{text_color};
-        margin:0;
-        padding:0;
-    ">
-        Last updated: <span id="since">--</span> ago
-    </div>
- 
-    <script>
-        const lastUpdate = new Date("{latest_changed}");
- 
-        function formatElapsed(seconds) {{
-            const m = Math.floor(seconds / 60);
-            const s = seconds % 60;
-            if (m > 0) {{
-                return m + "m " + String(s).padStart(2,'0') + "s";
-            }}
-            return s + "s";
-        }}
- 
-        function updateSince() {{
-            const now = new Date();
-            const diff = Math.max(0, Math.floor((now - lastUpdate) / 1000));
-            const el = document.getElementById("since");
-            if (el) {{
-                el.innerText = formatElapsed(diff);
-            }}
-        }}
- 
-        setInterval(updateSince, 1000);
-        updateSince();
-    </script>
-    """
-)
+
+# --- "Last updated" display (server-computed, no JS flicker) ---
+try:
+    changed_dt = datetime.fromisoformat(latest_changed)
+    elapsed_seconds = int((datetime.now(timezone.utc) - changed_dt).total_seconds())
+    elapsed_m = elapsed_seconds // 60
+    elapsed_s = elapsed_seconds % 60
+    if elapsed_m > 0:
+        elapsed_str = f"{elapsed_m}m {elapsed_s:02d}s"
+    else:
+        elapsed_str = f"{elapsed_s}s"
+except Exception:
+    elapsed_str = "--"
+
+st.markdown(f"**Last updated:** {elapsed_str} ago")
 st.caption("Auto-refresh every 4 minutes")
  
 if not rows:
@@ -1702,21 +1668,18 @@ build_status_cards(df)
  
 for group_name in LOCATION_GROUPS.keys():
     st.subheader(group_name)
- 
+
     group_df = df[df["Group"] == group_name].copy()
     group_df = group_df.reset_index(drop=True)
     group_df = group_df.dropna(subset=["Site"])
- 
+
     table_df = group_df[display_columns].copy()
- 
-    # Only apply row styling when there are actually rows to color.
-    # Passing a Styler to st.dataframe causes a full re-render flash on
-    # every autorefresh rerun; a plain dataframe does not.
+
     has_colored_rows = (
         "Heat Index (F)" in table_df.columns
         and table_df["Heat Index (F)"].apply(_safe_hi_value).dropna().ge(YELLOW_MIN).any()
     )
- 
+
     if has_colored_rows:
         styled_df = (
             table_df.style
@@ -1728,7 +1691,7 @@ for group_name in LOCATION_GROUPS.keys():
             table_df.style
             .format(build_format_dict(table_df.columns), na_rep="")
         )
- 
+
     event = st.dataframe(
         styled_df,
         width="content",
@@ -1737,29 +1700,23 @@ for group_name in LOCATION_GROUPS.keys():
         on_select="rerun",
         selection_mode="single-cell",
     )
- 
-    render_history_panel(event, group_df)
- 
-# Persist selected panel across refreshes
-if st.session_state.selected_site is not None:
-    for group_name in LOCATION_GROUPS.keys():
-        group_df = df[df["Group"] == group_name].copy().reset_index(drop=True)
- 
+
+    # Try the live event first; fall back to session_state persistence
+    selected_cells = []
+    if event and "selection" in event:
+        selected_cells = event["selection"].get("cells", [])
+
+    if not selected_cells and st.session_state.selected_site is not None:
+        # Check if the persisted site belongs to THIS group
         matches = group_df[group_df["Site"] == st.session_state.selected_site]
         if not matches.empty:
             row_idx = matches.index[0]
-            site_name = st.session_state.selected_site
-            col_name = st.session_state.selected_column
- 
-            fake_event = {
-                "selection": {
-                    "rows": [],
-                    "cells": [(row_idx, col_name)],
-                }
-            }
-            render_history_panel(fake_event, group_df, source="persist")
-            break
- 
+            selected_cells = [(row_idx, st.session_state.selected_column)]
+
+    if selected_cells:
+        unified_event = {"selection": {"cells": selected_cells}}
+        render_history_panel(unified_event, group_df)
+        
 st.markdown(
     """
     **Heat Index Color Scale**
