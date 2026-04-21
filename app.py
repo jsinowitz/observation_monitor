@@ -797,7 +797,19 @@ components.html(
 st.caption("Auto-refresh every 4 minutes")
 
 rows, errors = fetch_all_data()
+df = pd.DataFrame(rows)
+changed_sites = set()
 
+if st.session_state.prev_df is not None:
+    prev = st.session_state.prev_df.set_index("Site")
+    curr = df.set_index("Site")
+
+    for site in curr.index:
+        if site in prev.index:
+            if not curr.loc[site].equals(prev.loc[site]):
+                changed_sites.add(site)
+
+st.session_state.prev_df = df.copy()
 if errors:
     with st.expander("Errors", expanded=False):
         for err in errors:
@@ -807,7 +819,6 @@ if not rows:
     st.warning("No data returned.")
     st.stop()
 
-(rows)
 
 display_columns = [
     "Site",
