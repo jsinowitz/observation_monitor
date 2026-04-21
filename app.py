@@ -235,7 +235,8 @@ def history_chart_series(hist_df, column_name):
     out = out.rename(columns={chart_col: "y"})
     out["y"] = pd.to_numeric(out["y"], errors="coerce")
     out = out.dropna(subset=["y"]).reset_index(drop=True)
-    plot_df = plot_df.iloc[::-1].reset_index(drop=True)
+    out = out.iloc[::-1].reset_index(drop=True)
+    
     out["x"] = range(len(out))
     out["y_min"] = y_min
     return out
