@@ -17,7 +17,7 @@ if "selected_site" not in st.session_state:
 if "selected_column" not in st.session_state:
     st.session_state.selected_column = None
 
-st_autorefresh(interval=120000, key="datarefresh")
+st_autorefresh(interval=30000, key="datarefresh") # polls supabase every 30 seconds
 
 YELLOW_MIN = 90
 ORANGE_MIN = 95
@@ -34,6 +34,9 @@ CENTRAL_TZ = ZoneInfo("America/Chicago")
 REFRESH_SECONDS = 120
 STALE_MINUTES = 30
 
+if "prev_df" not in st.session_state:
+    st.session_state.prev_df = None
+    
 LOCATION_GROUPS = {
     "Walt Disney World - Orlando": {
         "Magic Kingdom": "196686_POI",
@@ -609,7 +612,19 @@ def fetch_all_data():
         return [], ["No Supabase data"]
 
     df = pd.DataFrame(rows)
-
+    changed_sites = set()
+    
+    if st.session_state.prev_df is not None:
+        prev = st.session_state.prev_df.set_index("Site")
+        curr = df.set_index("Site")
+    
+        for site in curr.index:
+            if site in prev.index:
+                if not curr.loc[site].equals(prev.loc[site]):
+                    changed_sites.add(site)
+    
+    # store current for next run
+    st.session_state.prev_df = df.copy()
     # keep only latest per site
     df = df.sort_values("inserted_at", ascending=False)
     df = df.drop_duplicates(subset=["site_name"], keep="first")
@@ -642,14 +657,23 @@ def style_table(df):
         age_min = row.get("Observation Age (min)", None)
         is_stale = age_min is not None and pd.notna(age_min) and age_min > STALE_MINUTES
 
+        site = row.get("Site")
+
         bg = row_background_css(hi)
         stale_css = stale_text_css(is_stale, hi)
 
+        # 🔥 FLASH effect for changed rows
+        flash_css = ""
+        if site in changed_sites:
+            flash_css = "background-color: rgba(255,255,0,0.3); transition: background-color 1s ease-out;"
+
         styles = []
         for col in row.index:
-            cell_style = bg
+            cell_style = f"{bg} {flash_css}".strip()
+
             if col in ["Observation Time (CT)", "Observation Age (min)"] and stale_css:
                 cell_style = f"{cell_style} {stale_css}".strip()
+
             styles.append(cell_style)
 
         return styles
@@ -671,43 +695,59 @@ def get_latest_inserted_time():
 
     return rows[0]["inserted_at"]
 
-def build_status_cards(df):
-    total_sites = len(df)
-    stale_count = int((df["Observation Age (min)"] > STALE_MINUTES).fillna(False).sum())
-    max_hi = df["Heat Index (F)"].max() if not df.empty else None
-    hottest_site = None
-    orlando_df = df[df["Group"] == "Walt Disney World - Orlando"]
+# def build_status_cards(df):
+#     total_sites = len(df)
+#     stale_count = int((df["Observation Age (min)"] > STALE_MINUTES).fillna(False).sum())
+#     max_hi = df["Heat Index (F)"].max() if not df.empty else None
+#     hottest_site = None
+#     orlando_df = df[df["Group"] == "Walt Disney World - Orlando"]
     
-    hottest_site = None
+#     hottest_site = None
     
-    if not orlando_df.empty and orlando_df["Heat Index (F)"].notna().any():
-        max_hi = orlando_df["Heat Index (F)"].max()
+#     if not orlando_df.empty and orlando_df["Heat Index (F)"].notna().any():
+#         max_hi = orlando_df["Heat Index (F)"].max()
         
-        # pick first match (stable)
+#         # pick first match (stable)
+#         hottest_site = orlando_df[
+#             orlando_df["Heat Index (F)"] == max_hi
+#         ].iloc[0]["Site"]
+
+#     yellow_count = int(((df["Heat Index (F)"] >= 90) & (df["Heat Index (F)"] < 95)).sum())
+#     orange_count = int(((df["Heat Index (F)"] >= 95) & (df["Heat Index (F)"] < 100)).sum())
+#     red_count = int(((df["Heat Index (F)"] >= 100) & (df["Heat Index (F)"] < 105)).sum())
+#     purple_count = int((df["Heat Index (F)"] >= 105).sum())
+
+#     c1, c2, c3, c4 = st.columns(4)
+#     c1.metric("Stations", total_sites)
+#     c2.metric("Stale Obs (>30 min)", stale_count)
+#     c3.metric("Max Heat Index", f"{max_hi:.1f}°F" if pd.notna(max_hi) else "N/A")
+#     c4.metric("Orlando's Highest Heat Index Site", hottest_site if hottest_site else "N/A")
+
+#     c5, c6, c7, c8 = st.columns(4)
+#     c5.metric("Yellow Rows", yellow_count)
+#     c6.metric("Orange Rows", orange_count)
+#     c7.metric("Red Rows", red_count)
+#     c8.metric("Purple Rows", purple_count)
+
+def build_status_cards(df):
+    max_hi = df["Heat Index (F)"].max() if not df.empty else None
+
+    orlando_df = df[df["Group"] == "Walt Disney World - Orlando"]
+
+    hottest_site = None
+    if not orlando_df.empty and orlando_df["Heat Index (F)"].notna().any():
+        max_orlando_hi = orlando_df["Heat Index (F)"].max()
         hottest_site = orlando_df[
-            orlando_df["Heat Index (F)"] == max_hi
+            orlando_df["Heat Index (F)"] == max_orlando_hi
         ].iloc[0]["Site"]
 
-    yellow_count = int(((df["Heat Index (F)"] >= 90) & (df["Heat Index (F)"] < 95)).sum())
-    orange_count = int(((df["Heat Index (F)"] >= 95) & (df["Heat Index (F)"] < 100)).sum())
-    red_count = int(((df["Heat Index (F)"] >= 100) & (df["Heat Index (F)"] < 105)).sum())
-    purple_count = int((df["Heat Index (F)"] >= 105).sum())
+    c1, c2 = st.columns(2)
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Stations", total_sites)
-    c2.metric("Stale Obs (>30 min)", stale_count)
-    c3.metric("Max Heat Index", f"{max_hi:.1f}°F" if pd.notna(max_hi) else "N/A")
-    c4.metric("Orlando's Highest Heat Index Site", hottest_site if hottest_site else "N/A")
-
-    c5, c6, c7, c8 = st.columns(4)
-    c5.metric("Yellow Rows", yellow_count)
-    c6.metric("Orange Rows", orange_count)
-    c7.metric("Red Rows", red_count)
-    c8.metric("Purple Rows", purple_count)
-
+    c1.metric("Max Heat Index", f"{max_hi:.1f}°F" if pd.notna(max_hi) else "N/A")
+    c2.metric("Orlando Highest Site", hottest_site if hottest_site else "N/A")
 st.title("Disney Heat Index Dashboard")
 
-latest_inserted = get_latest_inserted_time()
+page_render_time = datetime.now(timezone.utc)
 
 if latest_inserted:
     is_dark = st.get_option("theme.base") == "dark"
@@ -724,31 +764,31 @@ if latest_inserted:
         ">
             Last updated: <span id="since">--</span> ago
         </div>
-
+    
         <script>
-            const lastInserted = new Date("{latest_inserted}");
-
+            const lastRendered = new Date("{page_render_time.isoformat()}");
+    
             function formatElapsed(seconds) {{
                 const m = Math.floor(seconds / 60);
                 const s = seconds % 60;
-
+    
                 if (m > 0) {{
                     return m + "m " + String(s).padStart(2,'0') + "s";
                 }} else {{
                     return s + "s";
                 }}
             }}
-
+    
             function updateSince() {{
                 const now = new Date();
-                const diff = Math.floor((now - lastInserted) / 1000);
-
+                const diff = Math.floor((now - lastRendered) / 1000);
+    
                 const el = document.getElementById("since");
                 if (el) {{
                     el.innerText = formatElapsed(diff);
                 }}
             }}
-
+    
             setInterval(updateSince, 1000);
             updateSince();
         </script>
@@ -768,7 +808,7 @@ if not rows:
     st.warning("No data returned.")
     st.stop()
 
-df = pd.DataFrame(rows)
+(rows)
 
 display_columns = [
     "Site",
