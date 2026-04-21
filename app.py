@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
+import streamlit.components.v1 as components
 
 if "selected_site" not in st.session_state:
     st.session_state.selected_site = None
@@ -685,6 +686,20 @@ def style_table(df):
 
     return df.style.apply(apply_row_style, axis=1)
 
+def get_latest_inserted_time():
+    result = (
+        supabase.table("observations")
+        .select("inserted_at")
+        .order("inserted_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    rows = result.data or []
+    if not rows:
+        return None
+
+    return rows[0]["inserted_at"]
 
 def build_status_cards(df):
     total_sites = len(df)
@@ -712,41 +727,31 @@ def build_status_cards(df):
     c8.metric("Purple Rows", purple_count)
 
 st.title("Disney Heat Index Dashboard")
-st.markdown(
-    """
-    <div style="font-size:18px; font-weight:600;">
-        Time until next update: <span id="countdown">--:--</span>
-    </div>
 
-    <script>
-        function waitForElement(id, callback) {
-            const interval = setInterval(() => {
-                const el = document.getElementById(id);
-                if (el) {
-                    clearInterval(interval);
-                    callback(el);
-                }
-            }, 100);
-        }
+latest_inserted = get_latest_inserted_time()
 
-        function startCountdown(el) {
-            function updateCountdown() {
+if latest_inserted:
+    components.html(
+        f"""
+        <div style="font-size:18px; font-weight:600;">
+            Time until next update: <span id="countdown">--:--</span>
+        </div>
+
+        <script>
+            const lastInserted = new Date("{latest_inserted}");
+
+            function updateCountdown() {{
                 const now = new Date();
 
-                const next = new Date(now);
-                next.setSeconds(0);
-                next.setMilliseconds(0);
-
-                const minutes = next.getMinutes();
-                const remainder = minutes % 2;
-
-                if (remainder === 0 && now.getSeconds() === 0) {
-                    next.setMinutes(minutes + 2);
-                } else {
-                    next.setMinutes(minutes + (2 - remainder));
-                }
+                // Next update = last inserted + 2 minutes
+                const next = new Date(lastInserted.getTime() + 2 * 60 * 1000);
 
                 const diff = next - now;
+
+                if (diff <= 0) {{
+                    document.getElementById("countdown").innerText = "00:00";
+                    return;
+                }}
 
                 const totalSeconds = Math.floor(diff / 1000);
                 const m = Math.floor(totalSeconds / 60);
@@ -756,18 +761,15 @@ st.markdown(
                     String(m).padStart(2, '0') + ":" +
                     String(s).padStart(2, '0');
 
-                el.innerText = formatted;
-            }
+                document.getElementById("countdown").innerText = formatted;
+            }}
 
-            setInterval(updateCountdown, 950);
+            setInterval(updateCountdown, 1000);
             updateCountdown();
-        }
-
-        waitForElement("countdown", startCountdown);
-    </script>
-    """,
-    unsafe_allow_html=True
-)
+        </script>
+        """,
+        height=40
+    )
 st.caption("Auto-refresh every 2 minutes")
 
 rows, errors = fetch_all_data()
