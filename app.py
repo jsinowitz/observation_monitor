@@ -706,8 +706,17 @@ def build_status_cards(df):
     stale_count = int((df["Observation Age (min)"] > STALE_MINUTES).fillna(False).sum())
     max_hi = df["Heat Index (F)"].max() if not df.empty else None
     hottest_site = None
-    if not df.empty and df["Heat Index (F)"].notna().any():
-        hottest_site = df.loc[df["Heat Index (F)"].idxmax(), "Site"]
+    orlando_df = df[df["Group"] == "Walt Disney World - Orlando"]
+    
+    hottest_site = None
+    
+    if not orlando_df.empty and orlando_df["Heat Index (F)"].notna().any():
+        max_hi = orlando_df["Heat Index (F)"].max()
+        
+        # pick first match (stable)
+        hottest_site = orlando_df[
+            orlando_df["Heat Index (F)"] == max_hi
+        ].iloc[0]["Site"]
 
     yellow_count = int(((df["Heat Index (F)"] >= 90) & (df["Heat Index (F)"] < 95)).sum())
     orange_count = int(((df["Heat Index (F)"] >= 95) & (df["Heat Index (F)"] < 100)).sum())
@@ -730,10 +739,13 @@ st.title("Disney Heat Index Dashboard")
 
 latest_inserted = get_latest_inserted_time()
 
+is_dark = st.get_option("theme.base") == "dark"
+text_color = "#ffffff" if is_dark else "#000000"
+
 if latest_inserted:
     components.html(
         f"""
-        <div style="font-size:18px; font-weight:600;">
+        <div style="font-size:18px; font-weight:600; color:{text_color};">
             Time until next update: <span id="countdown">--:--</span>
         </div>
 
@@ -742,8 +754,6 @@ if latest_inserted:
 
             function updateCountdown() {{
                 const now = new Date();
-
-                // Next update = last inserted + 2 minutes
                 const next = new Date(lastInserted.getTime() + 2 * 60 * 1000);
 
                 const diff = next - now;
