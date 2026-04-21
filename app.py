@@ -364,14 +364,13 @@ def build_history_chart(hist_df, column_name):
             x=latest_x,
             y=latest_y,
             text=label_text,
-            showarrow=True,
-            arrowhead=2,
-            ax=30,   # horizontal offset
-            ay=0,
+            showarrow=False,  # 🔥 REMOVE ARROW
+            xshift=15,        # slight horizontal offset
             font=dict(size=12, color=label_color),
-            bgcolor="#000000" if is_dark_theme() else "#ffffff",
+            bgcolor="rgba(0,0,0,0)",
             bordercolor=label_color,
             borderwidth=1
+            borderpad=4
         )
     # --- Layout ---
     fig.update_layout(
@@ -470,7 +469,11 @@ def render_history_panel(selection, group_df):
             with right_col:
                 fig = build_history_chart(hist_df, col_name)
                 if fig is not None:
-                    st.plotly_chart(fig, width="stretch")
+                    st.plotly_chart(
+                        fig,
+                        width="stretch",
+                        key=f"chart_{site_name}_{col_name}"
+                    )
                     
 def get_current_conditions(location_key):
     url = f"{BASE_URL}/currentconditions/v1/{location_key}"
