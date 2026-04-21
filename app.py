@@ -79,37 +79,24 @@ def format_obs_time_ct_short(obs_time):
         return obs_time
         
 def history_all_variables_df(site_name, location_key):
-    latest_result = (
-        supabase.table("observations")
-        .select("inserted_at")
-        .eq("site_name", site_name)
-        .order("inserted_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-
-    latest_rows = latest_result.data or []
-    if not latest_rows:
-        return pd.DataFrame()
-
-    latest_inserted = datetime.fromisoformat(latest_rows[0]["inserted_at"].replace("Z", "+00:00"))
-    cutoff = (latest_inserted - timedelta(hours=1)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
 
     result = (
         supabase.table("observations")
         .select("site_name, inserted_at, obs_time_utc, temp_f, dewpoint_f, rh, wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f")
         .eq("site_name", site_name)
-        .gte("obs_time_utc", cutoff)
+        .gte("inserted_at", cutoff)
         .order("inserted_at", desc=True)
+        .limit(15)
         .execute()
     )
 
     rows = result.data or []
-    rows = filter_to_6min_intervals(rows)
+
     return pd.DataFrame([
         {
             "Site": r["site_name"],
-            "Observation Time (CT)": format_obs_time_ct_short(r["obs_time_utc"]),
+            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"])
             "Temp (F)": r["temp_f"],
             "Dew Point (F)": r["dewpoint_f"],
             "RH (%)": r["rh"],
@@ -117,11 +104,11 @@ def history_all_variables_df(site_name, location_key):
             "Wind Gust (mph)": r["wind_gust_mph"],
             "Wind Dir": r["wind_dir"],
             "Heat Index (F)": r["heat_index_f"],
-            "Heat Index Band": heat_index_band(r["heat_index_f"]) if r["heat_index_f"] is not None else "None",
+            "Heat Index Band": heat_index_band(r["heat_index_f"]),
         }
         for r in rows
     ])
-
+    
 def history_single_variable_df(site_name, location_key, column_name):
     column_map = {
         "Temp (F)": "temp_f",
@@ -135,73 +122,54 @@ def history_single_variable_df(site_name, location_key, column_name):
 
     is_heat_index = column_name in ["Heat Index (F)", "Heat Index Band"]
 
-    if column_name not in column_map and not is_heat_index:
-        return pd.DataFrame()
-
-    # get latest timestamp
-    latest_result = (
-        supabase.table("observations")
-        .select("inserted_at")
-        .eq("site_name", site_name)
-        .order("inserted_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-
-    latest_rows = latest_result.data or []
-    if not latest_rows:
-        return pd.DataFrame()
-
-    latest_inserted = datetime.fromisoformat(
-        latest_rows[0]["inserted_at"].replace("Z", "+00:00")
-    )
-    cutoff = (latest_inserted - timedelta(hours=1)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
 
     if is_heat_index:
         result = (
             supabase.table("observations")
             .select("site_name, inserted_at, obs_time_utc, heat_index_f")
             .eq("site_name", site_name)
-            .gte("obs_time_utc", cutoff)
+            .gte("inserted_at", cutoff)
             .order("inserted_at", desc=True)
+            .limit(15)
             .execute()
         )
-        
+
         rows = result.data or []
-        rows = filter_to_6min_intervals(rows)
+
         return pd.DataFrame([
             {
                 "Site": r["site_name"],
-                "Observation Time (CT)": format_obs_time_ct_short(r["obs_time_utc"]),
+                "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
                 "Heat Index (F)": r["heat_index_f"],
                 "Heat Index Band": heat_index_band(r["heat_index_f"]),
             }
             for r in rows
         ])
 
-    # 🔹 NORMAL VARIABLE CASE
     db_col = column_map[column_name]
 
     result = (
         supabase.table("observations")
         .select(f"site_name, inserted_at, obs_time_utc, {db_col}")
         .eq("site_name", site_name)
-        .gte("obs_time_utc", cutoff)
+        .gte("inserted_at", cutoff)
         .order("inserted_at", desc=True)
+        .limit(15)
         .execute()
     )
 
     rows = result.data or []
-    rows = filter_to_6min_intervals(rows)
+
     return pd.DataFrame([
         {
             "Site": r["site_name"],
-            "Observation Time (CT)": format_obs_time_ct_short(r["obs_time_utc"]),
+            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
             column_name: r[db_col],
         }
         for r in rows
     ])
-
+    
 def history_chart_series(hist_df, column_name):
     if hist_df.empty:
         return pd.DataFrame()
@@ -410,10 +378,10 @@ def filter_to_6min_intervals(rows):
     seen_minutes = set()
 
     for r in rows:
-        dt = datetime.fromisoformat(r["obs_time_utc"].replace("Z","+00:00"))
+        dt = datetime.fromisoformat(r["inserted_at"].replace("Z","+00:00"))
 
-        # round DOWN to nearest 6-minute bucket
-        minute_bucket = (dt.minute // 6) * 6
+        # round DOWN to nearest 4-minute bucket
+        minute_bucket = (dt.minute // 4) * 4
 
         key = (dt.hour, minute_bucket)
 
@@ -421,8 +389,8 @@ def filter_to_6min_intervals(rows):
             seen_minutes.add(key)
             filtered.append(r)
 
-        # stop once we have 10 rows
-        if len(filtered) >= 10:
+        # stop once we have 15 rows
+        if len(filtered) >= 15:
             break
 
     return filtered
@@ -649,13 +617,13 @@ def fetch_all_data():
     output = []
 
     for _, r in df.iterrows():
-        obs_time = datetime.fromisoformat(r["obs_time_utc"].replace("Z","+00:00"))
+        insert_time = datetime.fromisoformat(r["inserted_at"].replace("Z","+00:00"))
     
         output.append({
             "Group": r["group_name"],
             "Site": r["site_name"],
-            "Observation Time (CT)": format_obs_time_ct_short(r["obs_time_utc"]),
-            "Observation Age (min)": int((datetime.now(timezone.utc) - obs_time).total_seconds()/60),
+            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
+            "Observation Age (min)": int((datetime.now(timezone.utc) - insert_time).total_seconds()/60),
             "Temp (F)": round1(r["temp_f"]),
             "Dew Point (F)": round1(r["dewpoint_f"]),
             "RH (%)": round1(r["rh"]),
@@ -742,23 +710,19 @@ st.title("Disney Heat Index Dashboard")
 latest_inserted = get_latest_inserted_time()
 
 if latest_inserted:
-    dt = datetime.fromisoformat(latest_inserted.replace("Z", "+00:00")).astimezone(CENTRAL_TZ)
     is_dark = st.get_option("theme.base") == "dark"
     text_color = "#ffffff" if is_dark else "#000000"
 
-    st.markdown(
-        f"""
-        <div style="font-size:16px; font-weight:600; color:{text_color};">
-            Last updated: {dt.strftime('%-m/%-d %-I:%M:%S %p')} CT
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
     components.html(
         f"""
-        <div style="font-size:15px; opacity:0.8; color:{text_color};">
-            Updated <span id="since">--</span> ago
+        <div style="
+            font-size:16px;
+            font-weight:600;
+            color:{text_color};
+            margin:0;
+            padding:0;
+        ">
+            Last updated: <span id="since">--</span> ago
         </div>
 
         <script>
@@ -769,7 +733,7 @@ if latest_inserted:
                 const s = seconds % 60;
 
                 if (m > 0) {{
-                    return m + "m " + s + "s";
+                    return m + "m " + String(s).padStart(2,'0') + "s";
                 }} else {{
                     return s + "s";
                 }}
@@ -789,9 +753,9 @@ if latest_inserted:
             updateSince();
         </script>
         """,
-        height=35
+        height=28
     )
-st.caption("Auto-refresh every 2 minutes")
+st.caption("Auto-refresh every 4 minutes")
 
 rows, errors = fetch_all_data()
 
