@@ -727,7 +727,7 @@ def build_status_cards(df):
     c1.metric("Stations", total_sites)
     c2.metric("Stale Obs (>30 min)", stale_count)
     c3.metric("Max Heat Index", f"{max_hi:.1f}°F" if pd.notna(max_hi) else "N/A")
-    c4.metric("Highest Site", hottest_site if hottest_site else "N/A")
+    c4.metric("Orlando's Highest Site", hottest_site if hottest_site else "N/A")
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("Yellow Rows", yellow_count)
