@@ -1583,19 +1583,19 @@ def get_current_conditions(location_key):
  
  
 def build_status_cards(df):
-    max_hi = df["Heat Index (F)"].max() if not df.empty else None
- 
     orlando_df = df[df["Group"] == "Walt Disney World - Orlando"]
+
+    max_hi = None
     hottest_site = None
     if not orlando_df.empty and orlando_df["Heat Index (F)"].notna().any():
-        max_orlando_hi = orlando_df["Heat Index (F)"].max()
+        max_hi = orlando_df["Heat Index (F)"].max()
         hottest_site = orlando_df[
-            orlando_df["Heat Index (F)"] == max_orlando_hi
+            orlando_df["Heat Index (F)"] == max_hi
         ].iloc[0]["Site"]
- 
-    c1, c2 = st.columns(2)
-    c1.metric("Max Heat Index", f"{max_hi:.1f}°F" if pd.notna(max_hi) else "N/A")
-    c2.metric("Orlando Highest Site", hottest_site if hottest_site else "N/A")
+
+    c1, c2, _ = st.columns([1, 1, 3])
+    c1.metric("Orlando Highest Heat Index", f"{max_hi:.1f}°F" if pd.notna(max_hi) else "N/A")
+    c2.metric("Orlando Highest Heat Index Site", hottest_site if hottest_site else "N/A")
  
  # ===================================================================
 # MAIN PAGE
