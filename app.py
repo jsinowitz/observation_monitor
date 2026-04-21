@@ -905,7 +905,7 @@ import requests
 import streamlit as st
 from supabase import create_client
 import plotly.graph_objects as go
-# from streamlit_autorefresh import st_autorefresh
+from streamlit_autorefresh import st_autorefresh
  
 if "selected_site" not in st.session_state:
     st.session_state.selected_site = None
