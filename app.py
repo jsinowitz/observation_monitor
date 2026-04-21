@@ -97,9 +97,9 @@ def history_all_variables_df(site_name, location_key):
 
     result = (
         supabase.table("observations")
-        .select("site_name, inserted_at, temp_f, dewpoint_f, rh, wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f")
+        .select("site_name, inserted_at, obs_time_utc, temp_f, dewpoint_f, rh, wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f")
         .eq("site_name", site_name)
-        .gte("inserted_at", cutoff)
+        .gte("obs_time_utc", cutoff)
         .order("inserted_at", desc=True)
         .execute()
     )
@@ -109,7 +109,7 @@ def history_all_variables_df(site_name, location_key):
     return pd.DataFrame([
         {
             "Site": r["site_name"],
-            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
+            "Observation Time (CT)": format_obs_time_ct_short(r["obs_time_utc"]),
             "Temp (F)": r["temp_f"],
             "Dew Point (F)": r["dewpoint_f"],
             "RH (%)": r["rh"],
@@ -160,9 +160,9 @@ def history_single_variable_df(site_name, location_key, column_name):
     if is_heat_index:
         result = (
             supabase.table("observations")
-            .select("site_name, inserted_at, heat_index_f")
+            .select("site_name, inserted_at, obs_time_utc, heat_index_f")
             .eq("site_name", site_name)
-            .gte("inserted_at", cutoff)
+            .gte("obs_time_utc", cutoff)
             .order("inserted_at", desc=True)
             .execute()
         )
@@ -172,7 +172,7 @@ def history_single_variable_df(site_name, location_key, column_name):
         return pd.DataFrame([
             {
                 "Site": r["site_name"],
-                "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
+                "Observation Time (CT)": format_obs_time_ct_short(r["obs_time_utc"]),
                 "Heat Index (F)": r["heat_index_f"],
                 "Heat Index Band": heat_index_band(r["heat_index_f"]),
             }
@@ -184,19 +184,19 @@ def history_single_variable_df(site_name, location_key, column_name):
 
     result = (
         supabase.table("observations")
-        .select(f"site_name, inserted_at, {db_col}")
+        .select(f"site_name, inserted_at, obs_time_utc, {db_col}")
         .eq("site_name", site_name)
-        .gte("inserted_at", cutoff)
+        .gte("obs_time_utc", cutoff)
         .order("inserted_at", desc=True)
         .execute()
     )
 
     rows = result.data or []
-    rows = rows[::3]
+    rows = filter_to_6min_intervals(rows)
     return pd.DataFrame([
         {
             "Site": r["site_name"],
-            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
+            "Observation Time (CT)": format_obs_time_ct_short(r["obs_time_utc"]),
             column_name: r[db_col],
         }
         for r in rows
@@ -410,7 +410,7 @@ def filter_to_6min_intervals(rows):
     seen_minutes = set()
 
     for r in rows:
-        dt = datetime.fromisoformat(r["inserted_at"].replace("Z","+00:00"))
+        dt = datetime.fromisoformat(r["obs_time_utc"].replace("Z","+00:00"))
 
         # round DOWN to nearest 6-minute bucket
         minute_bucket = (dt.minute // 6) * 6
@@ -649,11 +649,13 @@ def fetch_all_data():
     output = []
 
     for _, r in df.iterrows():
+        obs_time = datetime.fromisoformat(r["obs_time_utc"].replace("Z","+00:00"))
+    
         output.append({
             "Group": r["group_name"],
             "Site": r["site_name"],
-            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
-            "Observation Age (min)": int((datetime.now(timezone.utc) - datetime.fromisoformat(r["inserted_at"].replace("Z","+00:00"))).total_seconds()/60),
+            "Observation Time (CT)": format_obs_time_ct_short(r["obs_time_utc"]),
+            "Observation Age (min)": int((datetime.now(timezone.utc) - obs_time).total_seconds()/60),
             "Temp (F)": round1(r["temp_f"]),
             "Dew Point (F)": round1(r["dewpoint_f"]),
             "RH (%)": round1(r["rh"]),
@@ -739,46 +741,55 @@ st.title("Disney Heat Index Dashboard")
 
 latest_inserted = get_latest_inserted_time()
 
-is_dark = st.get_option("theme.base") == "dark"
-text_color = "#ffffff" if is_dark else "#000000"
-
 if latest_inserted:
+    dt = datetime.fromisoformat(latest_inserted.replace("Z", "+00:00")).astimezone(CENTRAL_TZ)
+    is_dark = st.get_option("theme.base") == "dark"
+    text_color = "#ffffff" if is_dark else "#000000"
+
+    st.markdown(
+        f"""
+        <div style="font-size:16px; font-weight:600; color:{text_color};">
+            Last updated: {dt.strftime('%-m/%-d %-I:%M:%S %p')} CT
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
     components.html(
         f"""
-        <div style="font-size:18px; font-weight:600; color:{text_color};">
-            Time until next update: <span id="countdown">--:--</span>
+        <div style="font-size:15px; opacity:0.8; color:{text_color};">
+            Updated <span id="since">--</span> ago
         </div>
 
         <script>
             const lastInserted = new Date("{latest_inserted}");
 
-            function updateCountdown() {{
-                const now = new Date();
-                const next = new Date(lastInserted.getTime() + 2 * 60 * 1000);
+            function formatElapsed(seconds) {{
+                const m = Math.floor(seconds / 60);
+                const s = seconds % 60;
 
-                const diff = next - now;
-
-                if (diff <= 0) {{
-                    document.getElementById("countdown").innerText = "00:00";
-                    return;
+                if (m > 0) {{
+                    return m + "m " + s + "s";
+                }} else {{
+                    return s + "s";
                 }}
-
-                const totalSeconds = Math.floor(diff / 1000);
-                const m = Math.floor(totalSeconds / 60);
-                const s = totalSeconds % 60;
-
-                const formatted =
-                    String(m).padStart(2, '0') + ":" +
-                    String(s).padStart(2, '0');
-
-                document.getElementById("countdown").innerText = formatted;
             }}
 
-            setInterval(updateCountdown, 1000);
-            updateCountdown();
+            function updateSince() {{
+                const now = new Date();
+                const diff = Math.floor((now - lastInserted) / 1000);
+
+                const el = document.getElementById("since");
+                if (el) {{
+                    el.innerText = formatElapsed(diff);
+                }}
+            }}
+
+            setInterval(updateSince, 1000);
+            updateSince();
         </script>
         """,
-        height=40
+        height=35
     )
 st.caption("Auto-refresh every 2 minutes")
 
