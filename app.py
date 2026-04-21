@@ -90,12 +90,12 @@ def history_all_variables_df(site_name, location_key):
         .select("site_name, inserted_at, temp_f, dewpoint_f, rh, wind_speed_mph, wind_gust_mph, wind_dir, heat_index_f")
         .eq("site_name", site_name)
         .gte("inserted_at", cutoff)
-        .order("inserted_at")
+        .order("inserted_at", desc=True)
         .execute()
     )
 
     rows = result.data or []
-
+    rows = rows[::3]
     return pd.DataFrame([
         {
             "Site": r["site_name"],
@@ -153,12 +153,12 @@ def history_single_variable_df(site_name, location_key, column_name):
             .select("site_name, inserted_at, heat_index_f")
             .eq("site_name", site_name)
             .gte("inserted_at", cutoff)
-            .order("inserted_at")
+            .order("inserted_at", desc=True)
             .execute()
         )
 
         rows = result.data or []
-
+        rows = rows[::3]
         return pd.DataFrame([
             {
                 "Site": r["site_name"],
@@ -177,12 +177,12 @@ def history_single_variable_df(site_name, location_key, column_name):
         .select(f"site_name, inserted_at, {db_col}")
         .eq("site_name", site_name)
         .gte("inserted_at", cutoff)
-        .order("inserted_at")
+        .order("inserted_at", desc=True)
         .execute()
     )
 
     rows = result.data or []
-
+    rows = rows[::3]
     return pd.DataFrame([
         {
             "Site": r["site_name"],
@@ -221,11 +221,12 @@ def history_chart_series(hist_df, column_name):
         y_min = 0
     else:
         return pd.DataFrame()
-
+    
     out = df[["Observation Time (CT)", "x_label", chart_col]].copy()
     out = out.rename(columns={chart_col: "y"})
     out["y"] = pd.to_numeric(out["y"], errors="coerce")
     out = out.dropna(subset=["y"]).reset_index(drop=True)
+    plot_df = plot_df.iloc[::-1].reset_index(drop=True)
     out["x"] = range(len(out))
     out["y_min"] = y_min
     return out
@@ -633,24 +634,45 @@ def extract_row(group_name, site_name, key, c):
         "Heat Index Band": heat_index_band(hi),
         "_obs_time_raw": obs_time_raw,
     }
-
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_all_data():
-    rows = []
-    errors = []
+    result = (
+        supabase.table("observations")
+        .select("*")
+        .order("inserted_at", desc=True)
+        .execute()
+    )
 
-    for group_name, group_locations in LOCATION_GROUPS.items():
-        for site_name, key in group_locations.items():
-            try:
-                c = get_current_conditions(key)
-                if c:
-                    rows.append(extract_row(group_name, site_name, key, c))
-                else:
-                    errors.append(f"{site_name}: no data returned")
-            except Exception as e:
-                errors.append(f"{site_name}: {e}")
+    rows = result.data or []
 
-    return rows, errors
+    if not rows:
+        return [], ["No Supabase data"]
+
+    df = pd.DataFrame(rows)
+
+    # keep only latest per site
+    df = df.sort_values("inserted_at", ascending=False)
+    df = df.drop_duplicates(subset=["site_name"], keep="first")
+
+    output = []
+
+    for _, r in df.iterrows():
+        output.append({
+            "Group": r["group_name"],
+            "Site": r["site_name"],
+            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
+            "Observation Age (min)": int((datetime.now(timezone.utc) - datetime.fromisoformat(r["inserted_at"].replace("Z","+00:00"))).total_seconds()/60),
+            "Temp (F)": round1(r["temp_f"]),
+            "Dew Point (F)": round1(r["dewpoint_f"]),
+            "RH (%)": round1(r["rh"]),
+            "Wind Speed (mph)": round1(r["wind_speed_mph"]),
+            "Wind Gust (mph)": round1(r["wind_gust_mph"]),
+            "Wind Dir": r["wind_dir"],
+            "Heat Index (F)": round1(r["heat_index_f"]),
+            "Heat Index Band": heat_index_band(r["heat_index_f"]),
+        })
+
+    return output, []
 
 def style_table(df):
     def apply_row_style(row):
