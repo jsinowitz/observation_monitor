@@ -10,7 +10,14 @@ from matplotlib.collections import LineCollection
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
+if "selected_site" not in st.session_state:
+    st.session_state.selected_site = None
+
+if "selected_column" not in st.session_state:
+    st.session_state.selected_column = None
+
 st_autorefresh(interval=120000, key="datarefresh")
+
 YELLOW_MIN = 90
 ORANGE_MIN = 95
 RED_MIN = 100
@@ -275,11 +282,12 @@ def build_history_chart(hist_df, column_name):
     x = plot_df["x_label"].tolist()
     y = plot_df["y"].tolist()
 
+    is_hi = column_name in ["Heat Index (F)", "Heat Index Band"]
+
+    # --- Units + floor ---
     if column_name in ["Temp (F)", "Dew Point (F)", "Heat Index (F)", "Heat Index Band"]:
         unit = "°F"
-        y_floor = 70 if column_name in ["Heat Index (F)", "Heat Index Band"] else (
-            60 if column_name == "Temp (F)" else 50
-        )
+        y_floor = 70 if is_hi else (60 if column_name == "Temp (F)" else 50)
     elif column_name == "RH (%)":
         unit = "%"
         y_floor = 0
@@ -291,16 +299,26 @@ def build_history_chart(hist_df, column_name):
 
     fig = go.Figure()
 
-    if column_name in ["Heat Index (F)", "Heat Index Band"]:
+    # --- Heat Index segmented lines ---
+    if is_hi:
         for i in range(len(y) - 1):
             fig.add_trace(go.Scatter(
                 x=[x[i], x[i+1]],
                 y=[y[i], y[i+1]],
-                mode="lines+markers",
+                mode="lines",
                 line=dict(color=hi_segment_color(y[i+1]), width=3),
-                marker=dict(color=hi_segment_color(y[i+1]), size=6),
                 hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>"
             ))
+
+        # markers layer
+        fig.add_trace(go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            marker=dict(color=[hi_segment_color(v) for v in y], size=6),
+            hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>"
+        ))
+
     else:
         fig.add_trace(go.Scatter(
             x=x,
@@ -308,10 +326,11 @@ def build_history_chart(hist_df, column_name):
             mode="lines+markers",
             line=dict(color=solid_line_color(column_name), width=3),
             marker=dict(size=6),
-            hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>"
+            hovertemplate=f"%{{y:.1f}}{unit}<extra></extra>",
         ))
-        
-    if column_name in ["Heat Index (F)", "Heat Index Band"]:
+
+    # --- Title ---
+    if is_hi:
         title = "Heat Index Over the Last Hour"
     elif column_name == "Temp (F)":
         title = "Temperature Over the Last Hour"
@@ -326,122 +345,63 @@ def build_history_chart(hist_df, column_name):
     else:
         title = f"{column_name} Over the Last Hour"
         
+    if len(y) > 0:
+        latest_x = x[-1]
+        latest_y = y[-1]
+    
+        # --- determine color ---
+        if is_hi:
+            label_color = hi_segment_color(latest_y)
+        else:
+            label_color = solid_line_color(column_name)
+    
+        # --- label text ---
+        label_text = f"{latest_y:.1f}{unit}"
+    
+        # --- add annotation ---
+        fig.add_annotation(
+            x=latest_x,
+            y=latest_y,
+            text=label_text,
+            showarrow=True,
+            arrowhead=2,
+            ax=30,   # horizontal offset
+            ay=0,
+            font=dict(size=12, color=label_color),
+            bgcolor="#000000" if is_dark_theme() else "#ffffff"
+            bordercolor=label_color,
+            borderwidth=1
+        )
+    # --- Layout ---
     fig.update_layout(
-    title=dict(
-        text=title,
-        x=0.5,  # center
-        xanchor="center",
-        font=dict(size=14)
-    ),
-    height=260,
-    margin=dict(l=20, r=20, t=30, b=20),
-    xaxis=dict(
-        tickmode="array",
-        tickvals=x,
-        ticktext=x
-    ),
-    yaxis=dict(
-        range=[y_floor, y_ceiling],
-        dtick=10
-    ),
-    showlegend=False
-)
+        title=dict(
+            text=title,
+            x=0.5,
+            xanchor="center",
+            font=dict(size=14)
+        ),
+        height=260,
+        margin=dict(l=20, r=20, t=30, b=20),
+        xaxis=dict(
+            tickmode="array",
+            tickvals=x,
+            ticktext=x
+        ),
+        yaxis=dict(
+            range=[y_floor, y_ceiling],
+            dtick=10
+        ),
+        showlegend=False,
+        transition=dict(
+            duration=600,
+            easing="cubic-in-out"
+        )
+    )
+
+    fig.update_traces(connectgaps=True)
 
     return fig
     
-# def render_history_panel(selection, group_df):
-#     if not selection or "selection" not in selection:
-#         return
-
-#     selected_rows = selection["selection"].get("rows", [])
-#     selected_cells = selection["selection"].get("cells", [])
-
-#     table_df = group_df.reset_index(drop=True)
-
-#     if selected_rows:
-#         row_idx = selected_rows[0]
-#         if row_idx >= len(table_df):
-#             return
-
-#         site_name = table_df.loc[row_idx, "Site"]
-#         location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
-
-#         with st.expander(f"Last hour for {site_name}", expanded=True):
-#             hist_df = history_all_variables_df(site_name, location_key)
-#             if hist_df.empty:
-#                 st.info("No historical data returned for the past hour.")
-#             else:
-#                 st.dataframe(
-#                     style_table(hist_df).format({
-#                         "Temp (F)": "{:.1f}",
-#                         "Dew Point (F)": "{:.1f}",
-#                         "RH (%)": "{:.1f}",
-#                         "Wind Speed (mph)": "{:.1f}",
-#                         "Wind Gust (mph)": "{:.1f}",
-#                         "Heat Index (F)": "{:.1f}",
-#                     }, na_rep=""),
-#                     width=950,
-#                     hide_index=True
-#                 )
-#         return
-
-#     if selected_cells:
-#         row_idx, col_name = selected_cells[0]
-
-#         if row_idx >= len(table_df):
-#             return
-
-#         site_name = table_df.loc[row_idx, "Site"]
-#         location_key = LOCATION_GROUPS[table_df.loc[row_idx, "Group"]][site_name]
-
-#         if col_name == "Site":
-#             with st.expander(f"Last hour for {site_name}", expanded=True):
-#                 hist_df = history_all_variables_df(site_name, location_key)
-#                 if hist_df.empty:
-#                     st.info("No historical data returned for the past hour.")
-#                 else:
-#                     st.dataframe(
-#                         style_table(hist_df).format({
-#                             "Temp (F)": "{:.1f}",
-#                             "Dew Point (F)": "{:.1f}",
-#                             "RH (%)": "{:.1f}",
-#                             "Wind Speed (mph)": "{:.1f}",
-#                             "Wind Gust (mph)": "{:.1f}",
-#                             "Heat Index (F)": "{:.1f}",
-#                         }, na_rep=""),
-#                         width=950,
-#                         hide_index=True
-#                     )
-#             return
-
-#         if col_name not in display_columns or col_name in ["Observation Time (CT)", "Observation Age (min)"]:
-#             return
-#         with st.expander(f"Last hour for {site_name} — {col_name}", expanded=True):
-#             hist_df = history_single_variable_df(site_name, location_key, col_name)
-
-#             if hist_df.empty:
-#                 st.info("No historical data returned for the past hour.")
-#             else:
-#                 left_col, right_col = st.columns([1.8, 1.2], vertical_alignment="top")
-
-#                 with left_col:
-#                     st.dataframe(
-#                         style_table(hist_df).format({
-#                             "Temp (F)": "{:.1f}",
-#                             "Dew Point (F)": "{:.1f}",
-#                             "RH (%)": "{:.1f}",
-#                             "Wind Speed (mph)": "{:.1f}",
-#                             "Wind Gust (mph)": "{:.1f}",
-#                             "Heat Index (F)": "{:.1f}",
-#                         }, na_rep=""),
-#                         width=950,
-#                         hide_index=True
-#                     )
-
-#                 with right_col:
-#                     fig = build_history_chart(hist_df, col_name)
-#                     if fig is not None:
-#                         st.plotly_chart(fig, width="stretch")
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
         return
@@ -453,7 +413,8 @@ def render_history_panel(selection, group_df):
     table_df = group_df.reset_index(drop=True)
 
     row_idx, col_name = selected_cells[0]
-
+    st.session_state.selected_site = table_df.loc[row_idx, "Site"]
+    st.session_state.selected_column = col_name
     if row_idx >= len(table_df):
         return
 
@@ -784,7 +745,27 @@ for group_name in LOCATION_GROUPS.keys():
     )
 
     render_history_panel(event, group_df)
-
+    #  Restore last selection after refresh
+    if st.session_state.selected_site is not None:
+        for group_name in LOCATION_GROUPS.keys():
+            group_df = df[df["Group"] == group_name].copy().reset_index(drop=True)
+    
+            matches = group_df[group_df["Site"] == st.session_state.selected_site]
+            if not matches.empty:
+                row_idx = matches.index[0]
+                site_name = st.session_state.selected_site
+                col_name = st.session_state.selected_column
+    
+                # mimic a selection event
+                fake_event = {
+                    "selection": {
+                        "rows": [],
+                        "cells": [(row_idx, col_name)]
+                    }
+                }
+    
+                render_history_panel(fake_event, group_df)
+                break
 st.markdown(
     """
     **Heat Index Color Scale**
@@ -811,15 +792,3 @@ st.markdown(
 now_ct = datetime.now(CENTRAL_TZ)
 st.caption(f"Last page render: {now_ct.month}/{now_ct.day} {now_ct.strftime('%I:%M%p').lstrip('0').lower()} CT")
 
-st.markdown(
-    """
-    <script>
-        function refreshPage() {
-            window.location.reload();
-        }
-
-        setInterval(refreshPage, 120000); // 2 minutes
-    </script>
-    """,
-    unsafe_allow_html=True,
-)
