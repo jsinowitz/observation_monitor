@@ -34,9 +34,6 @@ CENTRAL_TZ = ZoneInfo("America/Chicago")
 REFRESH_SECONDS = 120
 STALE_MINUTES = 30
 
-if "prev_df" not in st.session_state:
-    st.session_state.prev_df = None
-    
 LOCATION_GROUPS = {
     "Walt Disney World - Orlando": {
         "Magic Kingdom": "196686_POI",
@@ -401,7 +398,7 @@ def render_history_panel(selection, group_df):
                 st.info("No historical data returned for the past hour.")
             else:
                 st.dataframe(
-                    style_table(hist_df, changed_sites).format({
+                    style_table(hist_df).format({
                         "Temp (F)": "{:.1f}",
                         "Dew Point (F)": "{:.1f}",
                         "RH (%)": "{:.1f}",
@@ -427,7 +424,7 @@ def render_history_panel(selection, group_df):
 
             with left_col:
                 st.dataframe(
-                    style_table(hist_df, changed_sites).format({
+                    style_table(hist_df).format({
                         "Temp (F)": "{:.1f}",
                         "Dew Point (F)": "{:.1f}",
                         "RH (%)": "{:.1f}",
@@ -616,26 +613,18 @@ def fetch_all_data():
         })
 
     return output, []
-def style_table(df, changed_sites):
+def style_table(df):
     def apply_row_style(row):
         hi = row.get("Heat Index (F)", None)
         age_min = row.get("Observation Age (min)", None)
         is_stale = age_min is not None and pd.notna(age_min) and age_min > STALE_MINUTES
 
-        site = row.get("Site")
-
         bg = row_background_css(hi)
         stale_css = stale_text_css(is_stale, hi)
 
-       flash_css = ""
-        if site in changed_sites:
-            flash_css = """
-                background-color: rgba(255,255,0,0.4);
-                transition: background-color 1.5s ease-out;
-            """
         styles = []
         for col in row.index:
-            cell_style = f"{bg} {flash_css}".strip()
+            cell_style = bg
 
             if col in ["Observation Time (CT)", "Observation Age (min)"] and stale_css:
                 cell_style = f"{cell_style} {stale_css}".strip()
@@ -645,7 +634,7 @@ def style_table(df, changed_sites):
         return styles
 
     return df.style.apply(apply_row_style, axis=1)
-
+    
 def get_latest_inserted_time():
     result = (
         supabase.table("observations")
@@ -764,28 +753,6 @@ st.caption("Auto-refresh every 4 minutes")
 
 rows, errors = fetch_all_data()
 df = pd.DataFrame(rows)
-changed_sites = set()
-
-if (
-    st.session_state.prev_df is not None
-    and not st.session_state.prev_df.empty
-    and "Site" in st.session_state.prev_df.columns
-    and not df.empty
-    and "Site" in df.columns
-):
-    prev = st.session_state.prev_df.set_index("Site")
-    curr = df.set_index("Site")
-
-    for site in curr.index:
-        if site in prev.index:
-            if not curr.loc[site].equals(prev.loc[site]):
-                changed_sites.add(site)
-
-# store AFTER comparison
-st.session_state.prev_df = df.copy()if errors:
-    with st.expander("Errors", expanded=False):
-        for err in errors:
-            st.write(err)
 
 if not rows:
     st.warning("No data returned.")
@@ -817,7 +784,7 @@ for group_name in LOCATION_GROUPS.keys():
     
     table_df = group_df[display_columns].copy()
 
-    styled_df = style_table(table_df, changed_sites).format({
+    styled_df = style_table(table_df).format({
         "Observation Age (min)": "{:.0f}",
         "Temp (F)": "{:.1f}",
         "Dew Point (F)": "{:.1f}",
