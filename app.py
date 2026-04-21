@@ -688,6 +688,49 @@ def build_status_cards(df):
     c8.metric("Purple Rows", purple_count)
 
 st.title("Disney Heat Index Dashboard")
+st.markdown(
+    """
+    <div style="font-size:18px; color: #888; font-weight:600;">
+        Time until next update: <span id="countdown">--:--</span>
+    </div>
+
+    <script>
+        function updateCountdown() {
+            const now = new Date();
+
+            // Next 2-minute boundary
+            const next = new Date(now);
+            next.setSeconds(0);
+            next.setMilliseconds(0);
+
+            const minutes = next.getMinutes();
+            const remainder = minutes % 2;
+
+            if (remainder === 0 && now.getSeconds() === 0) {
+                next.setMinutes(minutes + 2);
+            } else {
+                next.setMinutes(minutes + (2 - remainder));
+            }
+
+            const diff = next - now;
+
+            const totalSeconds = Math.floor(diff / 1000);
+            const m = Math.floor(totalSeconds / 60);
+            const s = totalSeconds % 60;
+
+            const formatted =
+                String(m).padStart(2, '0') + ":" +
+                String(s).padStart(2, '0');
+
+            document.getElementById("countdown").innerText = formatted;
+        }
+
+        setInterval(updateCountdown, 1000);
+        updateCountdown();
+    </script>
+    """,
+    unsafe_allow_html=True
+)
 st.caption("Auto-refresh every 2 minutes")
 
 rows, errors = fetch_all_data()
