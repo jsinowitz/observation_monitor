@@ -375,29 +375,6 @@ def build_history_chart(hist_df, column_name):
 
     return fig
     
-def filter_to_6min_intervals(rows):
-    filtered = []
-
-    seen_minutes = set()
-
-    for r in rows:
-        dt = datetime.fromisoformat(r["inserted_at"].replace("Z","+00:00"))
-
-        # round DOWN to nearest 4-minute bucket
-        minute_bucket = (dt.minute // 4) * 4
-
-        key = (dt.hour, minute_bucket)
-
-        if key not in seen_minutes:
-            seen_minutes.add(key)
-            filtered.append(r)
-
-        # stop once we have 15 rows
-        if len(filtered) >= 15:
-            break
-
-    return filtered
-    
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
         return
@@ -650,11 +627,12 @@ def style_table(df, changed_sites):
         bg = row_background_css(hi)
         stale_css = stale_text_css(is_stale, hi)
 
-        # 🔥 Flash effect
-        flash_css = ""
+       flash_css = ""
         if site in changed_sites:
-            flash_css = "background-color: rgba(255,255,0,0.25);"
-
+            flash_css = """
+                background-color: rgba(255,255,0,0.4);
+                transition: background-color 1.5s ease-out;
+            """
         styles = []
         for col in row.index:
             cell_style = f"{bg} {flash_css}".strip()
@@ -788,7 +766,13 @@ rows, errors = fetch_all_data()
 df = pd.DataFrame(rows)
 changed_sites = set()
 
-if st.session_state.prev_df is not None:
+if (
+    st.session_state.prev_df is not None
+    and not st.session_state.prev_df.empty
+    and "Site" in st.session_state.prev_df.columns
+    and not df.empty
+    and "Site" in df.columns
+):
     prev = st.session_state.prev_df.set_index("Site")
     curr = df.set_index("Site")
 
@@ -796,9 +780,9 @@ if st.session_state.prev_df is not None:
         if site in prev.index:
             if not curr.loc[site].equals(prev.loc[site]):
                 changed_sites.add(site)
-                
-st.session_state.prev_df = df.copy()
-if errors:
+
+# store AFTER comparison
+st.session_state.prev_df = df.copy()if errors:
     with st.expander("Errors", expanded=False):
         for err in errors:
             st.write(err)
