@@ -104,7 +104,7 @@ def history_all_variables_df(site_name, location_key):
     )
 
     rows = result.data or []
-    rows = rows[::3]
+    rows = filter_to_6min_intervals(rows)
     return pd.DataFrame([
         {
             "Site": r["site_name"],
@@ -165,9 +165,9 @@ def history_single_variable_df(site_name, location_key, column_name):
             .order("inserted_at", desc=True)
             .execute()
         )
-
+        
         rows = result.data or []
-        rows = rows[::3]
+        rows = filter_to_6min_intervals(rows)
         return pd.DataFrame([
             {
                 "Site": r["site_name"],
@@ -364,8 +364,9 @@ def build_history_chart(hist_df, column_name):
             x=latest_x,
             y=latest_y,
             text=label_text,
-            showarrow=False,  # 🔥 REMOVE ARROW
-            xshift=15,        # slight horizontal offset
+            showarrow=False,
+            xshift=40,
+            yshift=-10,
             font=dict(size=12, color=label_color),
             bgcolor="rgba(0,0,0,0)",
             bordercolor=label_color,
@@ -401,6 +402,29 @@ def build_history_chart(hist_df, column_name):
     fig.update_traces(connectgaps=True)
 
     return fig
+    
+def filter_to_6min_intervals(rows):
+    filtered = []
+
+    seen_minutes = set()
+
+    for r in rows:
+        dt = datetime.fromisoformat(r["inserted_at"].replace("Z","+00:00"))
+
+        # round DOWN to nearest 6-minute bucket
+        minute_bucket = (dt.minute // 6) * 6
+
+        key = (dt.hour, minute_bucket)
+
+        if key not in seen_minutes:
+            seen_minutes.add(key)
+            filtered.append(r)
+
+        # stop once we have 10 rows
+        if len(filtered) >= 10:
+            break
+
+    return filtered
     
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
