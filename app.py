@@ -96,7 +96,7 @@ def history_all_variables_df(site_name, location_key):
     return pd.DataFrame([
         {
             "Site": r["site_name"],
-            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"])
+            "Observation Time (CT)": format_obs_time_ct_short(r["inserted_at"]),
             "Temp (F)": r["temp_f"],
             "Dew Point (F)": r["dewpoint_f"],
             "RH (%)": r["rh"],
