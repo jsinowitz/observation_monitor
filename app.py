@@ -749,52 +749,51 @@ st.title("Disney Heat Index Dashboard")
 
 page_render_time = datetime.now(timezone.utc)
 
-if latest_inserted:
-    is_dark = st.get_option("theme.base") == "dark"
-    text_color = "#ffffff" if is_dark else "#000000"
+is_dark = st.get_option("theme.base") == "dark"
+text_color = "#ffffff" if is_dark else "#000000"
 
-    components.html(
-        f"""
-        <div style="
-            font-size:16px;
-            font-weight:600;
-            color:{text_color};
-            margin:0;
-            padding:0;
-        ">
-            Last updated: <span id="since">--</span> ago
-        </div>
-    
-        <script>
-            const lastRendered = new Date("{page_render_time.isoformat()}");
-    
-            function formatElapsed(seconds) {{
-                const m = Math.floor(seconds / 60);
-                const s = seconds % 60;
-    
-                if (m > 0) {{
-                    return m + "m " + String(s).padStart(2,'0') + "s";
-                }} else {{
-                    return s + "s";
-                }}
+components.html(
+    f"""
+    <div style="
+        font-size:16px;
+        font-weight:600;
+        color:{text_color};
+        margin:0;
+        padding:0;
+    ">
+        Last updated: <span id="since">--</span> ago
+    </div>
+
+    <script>
+        const lastRendered = new Date("{page_render_time.isoformat()}");
+
+        function formatElapsed(seconds) {{
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+
+            if (m > 0) {{
+                return m + "m " + String(s).padStart(2,'0') + "s";
+            }} else {{
+                return s + "s";
             }}
-    
-            function updateSince() {{
-                const now = new Date();
-                const diff = Math.floor((now - lastRendered) / 1000);
-    
-                const el = document.getElementById("since");
-                if (el) {{
-                    el.innerText = formatElapsed(diff);
-                }}
+        }}
+
+        function updateSince() {{
+            const now = new Date();
+            const diff = Math.floor((now - lastRendered) / 1000);
+
+            const el = document.getElementById("since");
+            if (el) {{
+                el.innerText = formatElapsed(diff);
             }}
-    
-            setInterval(updateSince, 1000);
-            updateSince();
-        </script>
-        """,
-        height=28
-    )
+        }}
+
+        setInterval(updateSince, 1000);
+        updateSince();
+    </script>
+    """,
+    height=28
+)
 st.caption("Auto-refresh every 4 minutes")
 
 rows, errors = fetch_all_data()
