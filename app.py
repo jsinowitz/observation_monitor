@@ -371,7 +371,18 @@ def build_history_chart(hist_df, column_name):
     fig.update_traces(connectgaps=True)
 
     return fig
-    
+
+def get_text_color(bg_color):
+    if not bg_color:
+        return "color: inherit;"  # let Streamlit handle default text color
+
+    # light backgrounds → black text
+    if bg_color in ["#fff59d", "#ffcc80"]:
+        return "black"
+
+    # dark backgrounds → white text
+    return "white"
+
 def render_history_panel(selection, group_df):
     if not selection or "selection" not in selection:
         return
@@ -397,15 +408,26 @@ def render_history_panel(selection, group_df):
             if hist_df.empty:
                 st.info("No historical data returned for the past hour.")
             else:
+                styled_hist = hist_df.copy()
+                
+                def color_rows(row):
+                    color = get_row_color(row["Heat Index (F)"])
+                    return [
+                        f"background-color: {color}; color: black;" if color else ""
+                        for _ in row
+                    ]
+                
+                styled_hist = styled_hist.style.apply(color_rows, axis=1).format({
+                    "Temp (F)": "{:.1f}",
+                    "Dew Point (F)": "{:.1f}",
+                    "RH (%)": "{:.1f}",
+                    "Wind Speed (mph)": "{:.1f}",
+                    "Wind Gust (mph)": "{:.1f}",
+                    "Heat Index (F)": "{:.1f}",
+                }, na_rep="")
+                
                 st.dataframe(
-                    style_table(hist_df).format({
-                        "Temp (F)": "{:.1f}",
-                        "Dew Point (F)": "{:.1f}",
-                        "RH (%)": "{:.1f}",
-                        "Wind Speed (mph)": "{:.1f}",
-                        "Wind Gust (mph)": "{:.1f}",
-                        "Heat Index (F)": "{:.1f}",
-                    }, na_rep=""),
+                    styled_hist,
                     width=950,
                     hide_index=True
                 )
@@ -423,15 +445,26 @@ def render_history_panel(selection, group_df):
             left_col, right_col = st.columns([1.8, 1.2], vertical_alignment="top")
 
             with left_col:
+                styled_hist = hist_df.copy()
+                
+               def color_rows(row):
+                    color = get_row_color(row["Heat Index (F)"])
+                    return [
+                        f"background-color: {color}; color: black;" if color else ""
+                        for _ in row
+                    ]
+                
+                styled_hist = styled_hist.style.apply(color_rows, axis=1).format({
+                    "Temp (F)": "{:.1f}",
+                    "Dew Point (F)": "{:.1f}",
+                    "RH (%)": "{:.1f}",
+                    "Wind Speed (mph)": "{:.1f}",
+                    "Wind Gust (mph)": "{:.1f}",
+                    "Heat Index (F)": "{:.1f}",
+                }, na_rep="")
+                
                 st.dataframe(
-                    style_table(hist_df).format({
-                        "Temp (F)": "{:.1f}",
-                        "Dew Point (F)": "{:.1f}",
-                        "RH (%)": "{:.1f}",
-                        "Wind Speed (mph)": "{:.1f}",
-                        "Wind Gust (mph)": "{:.1f}",
-                        "Heat Index (F)": "{:.1f}",
-                    }, na_rep=""),
+                    styled_hist,
                     width=950,
                     hide_index=True
                 )
@@ -613,28 +646,7 @@ def fetch_all_data():
         })
 
     return output, []
-def style_table(df):
-    def apply_row_style(row):
-        hi = row.get("Heat Index (F)", None)
-        age_min = row.get("Observation Age (min)", None)
-        is_stale = age_min is not None and pd.notna(age_min) and age_min > STALE_MINUTES
 
-        bg = row_background_css(hi)
-        stale_css = stale_text_css(is_stale, hi)
-
-        styles = []
-        for col in row.index:
-            cell_style = bg
-
-            if col in ["Observation Time (CT)", "Observation Age (min)"] and stale_css:
-                cell_style = f"{cell_style} {stale_css}".strip()
-
-            styles.append(cell_style)
-
-        return styles
-
-    return df.style.apply(apply_row_style, axis=1)
-    
 def get_latest_inserted_time():
     result = (
         supabase.table("observations")
@@ -649,7 +661,17 @@ def get_latest_inserted_time():
         return None
 
     return rows[0]["inserted_at"]
-
+    
+def get_row_color(hi):
+    if hi is None or pd.isna(hi) or hi < YELLOW_MIN:
+        return ""
+    if hi < ORANGE_MIN:
+        return "#fff59d"
+    if hi < RED_MIN:
+        return "#ffcc80"
+    if hi < PURPLE_MIN:
+        return "#d32f2f"
+    return "#7b1fa2"
 # def build_status_cards(df):
 #     total_sites = len(df)
 #     stale_count = int((df["Observation Age (min)"] > STALE_MINUTES).fillna(False).sum())
@@ -702,7 +724,7 @@ def build_status_cards(df):
     c2.metric("Orlando Highest Site", hottest_site if hottest_site else "N/A")
 st.title("Disney Heat Index Dashboard")
 
-page_render_time = datetime.now(timezone.utc)
+latest_inserted = get_latest_inserted_time()
 
 is_dark = st.get_option("theme.base") == "dark"
 text_color = "#ffffff" if is_dark else "#000000"
@@ -720,7 +742,7 @@ components.html(
     </div>
 
     <script>
-        const lastRendered = new Date("{page_render_time.isoformat()}");
+        const lastUpdate = new Date("{latest_inserted}");
 
         function formatElapsed(seconds) {{
             const m = Math.floor(seconds / 60);
@@ -735,7 +757,7 @@ components.html(
 
         function updateSince() {{
             const now = new Date();
-            const diff = Math.floor((now - lastRendered) / 1000);
+            const diff = Math.floor((now - lastUpdate) / 1000);
 
             const el = document.getElementById("since");
             if (el) {{
@@ -784,16 +806,17 @@ for group_name in LOCATION_GROUPS.keys():
     
     table_df = group_df[display_columns].copy()
 
-    styled_df = style_table(table_df).format({
-        "Observation Age (min)": "{:.0f}",
-        "Temp (F)": "{:.1f}",
-        "Dew Point (F)": "{:.1f}",
-        "RH (%)": "{:.1f}",
-        "Wind Speed (mph)": "{:.1f}",
-        "Wind Gust (mph)": "{:.1f}",
-        "Heat Index (F)": "{:.1f}",
-    }, na_rep="")
-
+    styled_df = table_df.copy()
+    
+    def color_rows(row):
+        color = get_row_color(row["Heat Index (F)"])
+        return [
+            f"background-color: {color}; color: black;" if color else ""
+            for _ in row
+        ]
+    
+    styled_df = styled_df.style.apply(color_rows, axis=1)
+    
     event = st.dataframe(
         styled_df,
         width="content",
