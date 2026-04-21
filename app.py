@@ -369,7 +369,7 @@ def build_history_chart(hist_df, column_name):
             font=dict(size=12, color=label_color),
             bgcolor="rgba(0,0,0,0)",
             bordercolor=label_color,
-            borderwidth=1
+            borderwidth=1,
             borderpad=4
         )
     # --- Layout ---
