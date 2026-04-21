@@ -735,7 +735,6 @@ for group_name in LOCATION_GROUPS.keys():
         "RH (%)": "{:.1f}",
         "Wind Speed (mph)": "{:.1f}",
         "Wind Gust (mph)": "{:.1f}",
-        # "Wind Dir (deg)": "{:.1f}",
         "Heat Index (F)": "{:.1f}",
     }, na_rep="")
 
@@ -749,27 +748,27 @@ for group_name in LOCATION_GROUPS.keys():
     )
 
     render_history_panel(event, group_df)
-    #  Restore last selection after refresh
-    if st.session_state.selected_site is not None:
-        for group_name in LOCATION_GROUPS.keys():
-            group_df = df[df["Group"] == group_name].copy().reset_index(drop=True)
-    
-            matches = group_df[group_df["Site"] == st.session_state.selected_site]
-            if not matches.empty:
-                row_idx = matches.index[0]
-                site_name = st.session_state.selected_site
-                col_name = st.session_state.selected_column
-    
-                # mimic a selection event
-                fake_event = {
-                    "selection": {
-                        "rows": [],
-                        "cells": [(row_idx, col_name)]
-                    }
+
+# 🔥 MOVE THIS OUTSIDE LOOP
+if st.session_state.selected_site is not None:
+    for group_name in LOCATION_GROUPS.keys():
+        group_df = df[df["Group"] == group_name].copy().reset_index(drop=True)
+
+        matches = group_df[group_df["Site"] == st.session_state.selected_site]
+        if not matches.empty:
+            row_idx = matches.index[0]
+            site_name = st.session_state.selected_site
+            col_name = st.session_state.selected_column
+
+            fake_event = {
+                "selection": {
+                    "rows": [],
+                    "cells": [(row_idx, col_name)]
                 }
-    
-                render_history_panel(fake_event, group_df)
-                break
+            }
+
+            render_history_panel(fake_event, group_df)
+            break
 st.markdown(
     """
     **Heat Index Color Scale**
