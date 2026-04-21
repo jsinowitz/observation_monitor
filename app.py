@@ -8,7 +8,9 @@ from supabase import create_client
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import plotly.graph_objects as go
+from streamlit_autorefresh import st_autorefresh
 
+st_autorefresh(interval=120000, key="datarefresh")
 YELLOW_MIN = 90
 ORANGE_MIN = 95
 RED_MIN = 100
@@ -810,11 +812,13 @@ now_ct = datetime.now(CENTRAL_TZ)
 st.caption(f"Last page render: {now_ct.month}/{now_ct.day} {now_ct.strftime('%I:%M%p').lstrip('0').lower()} CT")
 
 st.markdown(
-    f"""
+    """
     <script>
-        setTimeout(function() {{
+        function refreshPage() {
             window.location.reload();
-        }}, {REFRESH_SECONDS * 1000});
+        }
+
+        setInterval(refreshPage, 120000); // 2 minutes
     </script>
     """,
     unsafe_allow_html=True,
