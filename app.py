@@ -424,7 +424,7 @@ def render_history_panel(selection, group_df):
                 st.info("No historical data returned for the past hour.")
             else:
                 st.dataframe(
-                    style_table(hist_df).format({
+                    style_table(hist_df, changed_sites).format({
                         "Temp (F)": "{:.1f}",
                         "Dew Point (F)": "{:.1f}",
                         "RH (%)": "{:.1f}",
@@ -450,7 +450,7 @@ def render_history_panel(selection, group_df):
 
             with left_col:
                 st.dataframe(
-                    style_table(hist_df).format({
+                    style_table(hist_df, changed_sites).format({
                         "Temp (F)": "{:.1f}",
                         "Dew Point (F)": "{:.1f}",
                         "RH (%)": "{:.1f}",
@@ -597,6 +597,7 @@ def extract_row(group_name, site_name, key, c):
         "Heat Index Band": heat_index_band(hi),
         "_obs_time_raw": obs_time_raw,
     }
+
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_all_data():
     result = (
@@ -612,19 +613,7 @@ def fetch_all_data():
         return [], ["No Supabase data"]
 
     df = pd.DataFrame(rows)
-    changed_sites = set()
-    
-    if st.session_state.prev_df is not None:
-        prev = st.session_state.prev_df.set_index("Site")
-        curr = df.set_index("Site")
-    
-        for site in curr.index:
-            if site in prev.index:
-                if not curr.loc[site].equals(prev.loc[site]):
-                    changed_sites.add(site)
-    
-    # store current for next run
-    st.session_state.prev_df = df.copy()
+
     # keep only latest per site
     df = df.sort_values("inserted_at", ascending=False)
     df = df.drop_duplicates(subset=["site_name"], keep="first")
@@ -633,7 +622,7 @@ def fetch_all_data():
 
     for _, r in df.iterrows():
         insert_time = datetime.fromisoformat(r["inserted_at"].replace("Z","+00:00"))
-    
+
         output.append({
             "Group": r["group_name"],
             "Site": r["site_name"],
@@ -650,8 +639,7 @@ def fetch_all_data():
         })
 
     return output, []
-
-def style_table(df):
+def style_table(df, changed_sites):
     def apply_row_style(row):
         hi = row.get("Heat Index (F)", None)
         age_min = row.get("Observation Age (min)", None)
@@ -662,10 +650,10 @@ def style_table(df):
         bg = row_background_css(hi)
         stale_css = stale_text_css(is_stale, hi)
 
-        # 🔥 FLASH effect for changed rows
+        # 🔥 Flash effect
         flash_css = ""
         if site in changed_sites:
-            flash_css = "background-color: rgba(255,255,0,0.3); transition: background-color 1s ease-out;"
+            flash_css = "background-color: rgba(255,255,0,0.25);"
 
         styles = []
         for col in row.index:
@@ -808,7 +796,7 @@ if st.session_state.prev_df is not None:
         if site in prev.index:
             if not curr.loc[site].equals(prev.loc[site]):
                 changed_sites.add(site)
-
+                
 st.session_state.prev_df = df.copy()
 if errors:
     with st.expander("Errors", expanded=False):
@@ -845,7 +833,7 @@ for group_name in LOCATION_GROUPS.keys():
     
     table_df = group_df[display_columns].copy()
 
-    styled_df = style_table(table_df).format({
+    styled_df = style_table(table_df, changed_sites).format({
         "Observation Age (min)": "{:.0f}",
         "Temp (F)": "{:.1f}",
         "Dew Point (F)": "{:.1f}",
