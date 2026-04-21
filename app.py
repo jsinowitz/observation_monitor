@@ -368,7 +368,7 @@ def build_history_chart(hist_df, column_name):
             ax=30,   # horizontal offset
             ay=0,
             font=dict(size=12, color=label_color),
-            bgcolor="#000000" if is_dark_theme() else "#ffffff"
+            bgcolor="#000000" if is_dark_theme() else "#ffffff",
             bordercolor=label_color,
             borderwidth=1
         )
