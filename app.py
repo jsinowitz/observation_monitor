@@ -1141,13 +1141,25 @@ def color_rows(row):
  
 
 def build_format_dict(columns):
-    """Build .format() dict only for numeric columns present in the dataframe."""
     fmt = {}
     for col in ["Temp (F)", "Dew Point (F)", "RH (%)", "Heat Index (F)"]:
         if col in columns:
             fmt[col] = "{:.1f}"
     return fmt
- 
+        
+ def _wind_display(val):
+    """Convert wind value for display: 0 -> 'Calm', otherwise round to whole number."""
+    if val is None:
+        return None
+    try:
+        v = float(val)
+        if pd.isna(v):
+            return None
+        if v == 0:
+            return "Calm"
+        return round(v)
+    except (TypeError, ValueError):
+        return None
 # ---------------------------------------------------------------------------
 # History helpers — single site drill-down
 # ---------------------------------------------------------------------------
@@ -1175,8 +1187,8 @@ def history_all_variables_df(site_name, location_key):
             "Temp (F)": r["temp_f"],
             "Dew Point (F)": r["dewpoint_f"],
             "RH (%)": r["rh"],
-            "Wind Speed (mph)": "Calm" if r["wind_speed_mph"] == "Calm" else r["wind_speed_mph"],
-            "Wind Gust (mph)": "Calm" if r["wind_gust_mph"] == "Calm" else r["wind_gust_mph"],
+            "Wind Speed (mph)": _wind_display(r["wind_speed_mph"]),
+            "Wind Gust (mph)": _wind_display(r["wind_gust_mph"]),
             "Wind Dir": r["wind_dir"],
             "Heat Index (F)": r["heat_index_f"],
             "Heat Index Band": heat_index_band(r["heat_index_f"]),
@@ -1561,8 +1573,8 @@ def fetch_all_data():
             "Temp (F)": round1(r["temp_f"]),
             "Dew Point (F)": round1(r["dewpoint_f"]),
             "RH (%)": round1(r["rh"]),
-            "Wind Speed (mph)": "Calm" if r["wind_speed_mph"] == "Calm" else round1(r["wind_speed_mph"]),
-            "Wind Gust (mph)": "Calm" if r["wind_gust_mph"] == "Calm" else round1(r["wind_gust_mph"]),
+            "Wind Speed (mph)": _wind_display(r["wind_speed_mph"]),
+            "Wind Gust (mph)": _wind_display(r["wind_gust_mph"]),
             "Wind Dir": r["wind_dir"],
             "Heat Index (F)": round1(r["heat_index_f"]),
             "Heat Index Band": heat_index_band(r["heat_index_f"]),
