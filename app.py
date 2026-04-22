@@ -1146,7 +1146,7 @@ def build_format_dict(columns):
     for col in ["Temp (F)", "Dew Point (F)", "RH (%)", "Heat Index (F)"]:
         if col in columns:
             fmt[col] = "{:.1f}"
-   return fmt
+    return fmt
  
 # ---------------------------------------------------------------------------
 # History helpers — single site drill-down
