@@ -1140,13 +1140,13 @@ def color_rows(row):
         return ["" for _ in row]
  
 
- def build_format_dict(columns):
+def build_format_dict(columns):
     """Build .format() dict only for numeric columns present in the dataframe."""
     fmt = {}
     for col in ["Temp (F)", "Dew Point (F)", "RH (%)", "Heat Index (F)"]:
         if col in columns:
             fmt[col] = "{:.1f}"
-    return fmt
+   return fmt
  
 # ---------------------------------------------------------------------------
 # History helpers — single site drill-down
