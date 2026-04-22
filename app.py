@@ -1147,7 +1147,7 @@ def build_format_dict(columns):
             fmt[col] = "{:.1f}"
     return fmt
         
- def _wind_display(val):
+def _wind_display(val):
     """Convert wind value for display: 0 -> 'Calm', otherwise round to whole number."""
     if val is None:
         return None
