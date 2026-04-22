@@ -1139,16 +1139,14 @@ def color_rows(row):
     else:
         return ["" for _ in row]
  
- 
-def build_format_dict(columns):
+
+ def build_format_dict(columns):
     """Build .format() dict only for numeric columns present in the dataframe."""
     fmt = {}
-    for col in ["Temp (F)", "Dew Point (F)", "RH (%)", "Wind Speed (mph)",
-                 "Wind Gust (mph)", "Heat Index (F)"]:
+    for col in ["Temp (F)", "Dew Point (F)", "RH (%)", "Heat Index (F)"]:
         if col in columns:
             fmt[col] = "{:.1f}"
     return fmt
- 
  
 # ---------------------------------------------------------------------------
 # History helpers — single site drill-down
@@ -1177,8 +1175,8 @@ def history_all_variables_df(site_name, location_key):
             "Temp (F)": r["temp_f"],
             "Dew Point (F)": r["dewpoint_f"],
             "RH (%)": r["rh"],
-            "Wind Speed (mph)": r["wind_speed_mph"],
-            "Wind Gust (mph)": r["wind_gust_mph"],
+            "Wind Speed (mph)": "Calm" if r["wind_speed_mph"] == "Calm" else r["wind_speed_mph"],
+            "Wind Gust (mph)": "Calm" if r["wind_gust_mph"] == "Calm" else r["wind_gust_mph"],
             "Wind Dir": r["wind_dir"],
             "Heat Index (F)": r["heat_index_f"],
             "Heat Index Band": heat_index_band(r["heat_index_f"]),
@@ -1563,8 +1561,8 @@ def fetch_all_data():
             "Temp (F)": round1(r["temp_f"]),
             "Dew Point (F)": round1(r["dewpoint_f"]),
             "RH (%)": round1(r["rh"]),
-            "Wind Speed (mph)": round1(r["wind_speed_mph"]),
-            "Wind Gust (mph)": round1(r["wind_gust_mph"]),
+            "Wind Speed (mph)": "Calm" if r["wind_speed_mph"] == "Calm" else round1(r["wind_speed_mph"]),
+            "Wind Gust (mph)": "Calm" if r["wind_gust_mph"] == "Calm" else round1(r["wind_gust_mph"]),
             "Wind Dir": r["wind_dir"],
             "Heat Index (F)": round1(r["heat_index_f"]),
             "Heat Index Band": heat_index_band(r["heat_index_f"]),
