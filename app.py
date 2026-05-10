@@ -812,13 +812,24 @@ display_columns = [
 ]
  
 build_status_cards(df)
- 
-for group_name in LOCATION_GROUPS.keys():
+ for group_name in LOCATION_GROUPS.keys():
     st.subheader(group_name)
 
     group_df = df[df["Group"] == group_name].copy()
     group_df = group_df.reset_index(drop=True)
     group_df = group_df.dropna(subset=["Site"])
+
+    # Force display order for Orlando
+    if group_name == "Walt Disney World - Orlando":
+        site_order = [
+            "Magic Kingdom", "Epcot", "Animal Kingdom", "Hollywood Studios",
+            "Blizzard Beach", "Typhoon Lagoon", "Disney Springs",
+            "Bay Lake", "Lake Buena Vista", "ESPN WWOS",
+        ]
+        group_df["_sort"] = group_df["Site"].map(
+            {name: i for i, name in enumerate(site_order)}
+        ).fillna(99)
+        group_df = group_df.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
 
     table_df = group_df[display_columns].copy()
 
@@ -854,7 +865,6 @@ for group_name in LOCATION_GROUPS.keys():
         selected_cells = event["selection"].get("cells", [])
 
     if not selected_cells and st.session_state.selected_site is not None:
-        # Check if the persisted site belongs to THIS group
         matches = group_df[group_df["Site"] == st.session_state.selected_site]
         if not matches.empty:
             row_idx = matches.index[0]
@@ -863,6 +873,56 @@ for group_name in LOCATION_GROUPS.keys():
     if selected_cells:
         unified_event = {"selection": {"cells": selected_cells}}
         render_history_panel(unified_event, group_df)
+# for group_name in LOCATION_GROUPS.keys():
+#     st.subheader(group_name)
+
+#     group_df = df[df["Group"] == group_name].copy()
+#     group_df = group_df.reset_index(drop=True)
+#     group_df = group_df.dropna(subset=["Site"])
+
+#     table_df = group_df[display_columns].copy()
+
+#     has_colored_rows = (
+#         "Heat Index (F)" in table_df.columns
+#         and table_df["Heat Index (F)"].apply(_safe_hi_value).dropna().ge(90).any()
+#     )
+
+#     if has_colored_rows:
+#         styled_df = (
+#             table_df.style
+#             .apply(color_rows, axis=1)
+#             .format(build_format_dict(table_df.columns), na_rep="")
+#         )
+#     else:
+#         styled_df = (
+#             table_df.style
+#             .format(build_format_dict(table_df.columns), na_rep="")
+#         )
+
+#     event = st.dataframe(
+#         styled_df,
+#         width="content",
+#         hide_index=True,
+#         key=f"table_{group_name}",
+#         on_select="rerun",
+#         selection_mode="single-cell",
+#     )
+
+#     # Try the live event first; fall back to session_state persistence
+#     selected_cells = []
+#     if event and "selection" in event:
+#         selected_cells = event["selection"].get("cells", [])
+
+#     if not selected_cells and st.session_state.selected_site is not None:
+#         # Check if the persisted site belongs to THIS group
+#         matches = group_df[group_df["Site"] == st.session_state.selected_site]
+#         if not matches.empty:
+#             row_idx = matches.index[0]
+#             selected_cells = [(row_idx, st.session_state.selected_column)]
+
+#     if selected_cells:
+#         unified_event = {"selection": {"cells": selected_cells}}
+#         render_history_panel(unified_event, group_df)
         
 left_note, right_note = st.columns(2)
 
