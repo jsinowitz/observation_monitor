@@ -42,6 +42,7 @@ LOCATION_GROUPS = {
         "Disney Springs": "196663_POI",
         "Bay Lake": "2257549",
         "Lake Buena Vista": "2257551",
+        "ESPN WWOS": "196659_POI",
     },
     "Disneyland Resort - California": {
         "Circle D Ranch": "2154424",
