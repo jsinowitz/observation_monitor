@@ -812,7 +812,7 @@ display_columns = [
 ]
  
 build_status_cards(df)
- for group_name in LOCATION_GROUPS.keys():
+for group_name in LOCATION_GROUPS.keys():
     st.subheader(group_name)
 
     group_df = df[df["Group"] == group_name].copy()
